@@ -55,3 +55,32 @@ the gold items that were actually retrieved.
 - `models.py`: OpenAI-compatible client with a disk cache, plus the mock models
 - `score.py`: parses and scores answers
 - `report.py`: builds the summary tables and figures
+
+## Experiment plan and reproducing it
+`scripts/run_full.sh MODEL` runs these steps in priority order. If a step can't finish (for example, a usage
+cap), it waits 20 minutes and retries before moving on:
+
+| Step | Questions | Prompt | Purpose |
+|---|---|---|---|
+| E1 | all 500 | direct | main results |
+| E3 | the stratified 100-question subset (every 5th question) | direct, second independent sample | run-to-run variation |
+| E2 | the same 100 | exhaustive, rowwise | does prompting close the gap? |
+
+**What's recorded.** Each call writes one line to `results/<run>/<model>__<variant>[__r<k>].jsonl`, containing:
+- the response text, plus the model's visible reasoning when the provider returns it
+- the served model ID, response ID, finish reason, and full token usage
+- latency, start and finish timestamps, request parameters, and a SHA-256 fingerprint of the exact prompt
+- the score, including the specific items missed or added
+
+Each pass also writes `results/<run>/manifests/<timestamp>__<model>__<variant>.json`, containing:
+- the command, git commit, and a fingerprint of all code
+- a fingerprint of the benchmark, and the exact question IDs
+- the prompt texts, package versions, Python version, and Claude CLI version
+
+**Reproducing a result.** Check out the manifest's commit, check that
+`sha256(data/benchmark_v0/{questions,tables}.jsonl)` matches its benchmark fingerprint, and re-run the manifest's
+command. Re-scoring needs no model calls: `scripts/analyze.py --results results/<run>`.
+
+**Caveats.** Claude Code CLI calls can't set temperature, and providers don't guarantee identical output even at
+temperature 0. E3 measures how much this matters. The smoke-test results from development are in
+`results/smoke_2026-10-11/`.
