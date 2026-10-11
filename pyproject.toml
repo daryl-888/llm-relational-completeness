@@ -1,0 +1,27 @@
+[project]
+name = "relcomplete"
+version = "0.1.0"
+description = "Benchmark for completeness-sensitive relational operations in LLMs"
+requires-python = ">=3.11"
+dependencies = [
+    "faker==40.43.0",  # pinned: generated names depend on the Faker version
+    "periodictable>=2.0",
+    "rank-bm25>=0.2.2",
+    "openai>=1.40",
+    "pandas>=2.0",
+    "matplotlib>=3.8",
+    "tabulate>=0.9",  # pandas to_markdown
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8"]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

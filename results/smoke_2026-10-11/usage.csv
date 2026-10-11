@@ -1,0 +1,8 @@
+model,variant,calls,served_by,input_tokens,cached_input,output_tokens,reasoning_tokens,cost_usd,mean_latency_s
+claude-cli/claude-haiku-4-5,direct,20.0,claude-haiku-4-5-20251001,171198.0,0.0,102808.0,100023.0,0.6852,
+claude-cli/claude-haiku-5-5,direct,20.0,claude-haiku-5-5,224968.0,0.0,33241.0,29779.0,,
+opencode-go/deepseek-v4-flash,direct,21.0,deepseek-v4-flash,157116.0,0.0,64514.0,62881.0,0.0623,21.1
+opencode-go/deepseek-v4-pro,direct,23.0,deepseek-v4-pro,172374.0,0.0,94275.0,92339.0,0.3004,35.7
+opencode-go/mimo-v2.6-flash,direct,21.0,mimo-v2.6-flash,177183.0,13056.0,39437.0,37478.0,0.0341,46.3
+opencode-go/mimo-v2.6-pro,direct,21.0,mimo-v2.6-pro,177183.0,13056.0,41965.0,39760.0,0.108,39.0
+TOTAL,,126.0,,1080022.0,26112.0,376240.0,362260.0,1.19,35.5
