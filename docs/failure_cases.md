@@ -4,7 +4,7 @@ Each case is a question a model got wrong in the main run (`results/full_v0`, re
 more times on the same model (`results/failure_cases`, repeats 1–3). Everything is re-scored with the
 current scorer. Models first run on OpenCode Go were re-run on the same model through OpenRouter.
 
-## Haiku 5.5: `enum-par-013`
+## Claude Haiku 5.5: `enum-par-013`
 
 **Question** (enumeration, none format, 50 records, ~0.0k tokens of data, 2 correct answers): List all U.S. states whose name ends with the letter y. Answer from your own knowledge.
 
@@ -15,7 +15,7 @@ current scorer. Models first run on OpenCode Go were re-run on the same model th
 - Missed in every failed run: new jersey
 - **Reproduced in 2 of 3 re-runs.**
 
-## Haiku 5.5: `enum-par-021`
+## Claude Haiku 5.5: `enum-par-021`
 
 **Question** (enumeration, none format, 50 records, ~0.0k tokens of data, 11 correct answers): List all U.S. states whose name contains the letter sequence "in" (case-insensitive). Answer from your own knowledge.
 
@@ -26,7 +26,7 @@ current scorer. Models first run on OpenCode Go were re-run on the same model th
 - Missed in every failed run: maine
 - **Reproduced in 3 of 3 re-runs.**
 
-## Haiku 5.5: `sel-029`
+## Claude Haiku 5.5: `sel-029`
 
 **Question** (selection, csv format, 400 records, ~4.6k tokens of data, 13 correct answers): List the names of all products whose units in stock is less than 22.
 
@@ -37,7 +37,7 @@ current scorer. Models first run on OpenCode Go were re-run on the same model th
 - Missed in every failed run: fendorlo k-579, soltor f-628
 - **Reproduced in 0 of 3 re-runs.**
 
-## Haiku 5.5: `join-004`
+## Claude Haiku 5.5: `join-004`
 
 **Question** (join, csv format, 100 records, ~1.5k tokens of data, 55 correct answers): List every (employee name, project name) pair such that the employee's office city is the same as the project's city, the employee's remote-work status is yes, and the project's status is Completed.
 
@@ -48,7 +48,7 @@ current scorer. Models first run on OpenCode Go were re-run on the same model th
 - Missed in every failed run: marissa carroll / orquin, marissa carroll / solquinfen, marissa carroll / thaloqua, marissa carroll / zenrasen
 - **Reproduced in 0 of 3 re-runs.**
 
-## Haiku 5.5: `nest-022`
+## Claude Haiku 5.5: `nest-022`
 
 **Question** (nested, csv format, 200 records, ~2.3k tokens of data, 13 correct answers): List the names of all products made by Draphe whose price is higher than the average price of all products (any brand) in the same category.
 
@@ -58,7 +58,7 @@ current scorer. Models first run on OpenCode Go were re-run on the same model th
 - re-run 3: recall 0.15, 11 missing, 1 wrong
 - **Reproduced in 2 of 3 re-runs.**
 
-## Haiku 5.5: `proj-031`
+## Claude Haiku 5.5: `proj-031`
 
 **Question** (projection, nl format, 300 records, ~8.5k tokens of data, 37 correct answers): For every book whose publisher is Ralys Press, give its title and publication year and genre.
 
@@ -69,7 +69,7 @@ current scorer. Models first run on OpenCode Go were re-run on the same model th
 - Missed in every failed run: archive of crimson zenfenmi / 2007 / poetry, garden of velvet lysul / 2011 / romance, orchard of hollow dralysvex / 2017 / fantasy, winter of endless raty / 1987 / mystery
 - **Reproduced in 0 of 3 re-runs.**
 
-## Haiku 5.5: `agg-015`
+## Claude Haiku 5.5: `agg-015`
 
 **Question** (aggregation, nl format, 400 records, ~11.3k tokens of data, 12 correct answers): How many books whose author is David Gutierrez and whose page count is less than 859 are there?
 
@@ -79,7 +79,7 @@ current scorer. Models first run on OpenCode Go were re-run on the same model th
 - re-run 3: correct
 - **Reproduced in 0 of 3 re-runs.**
 
-## Haiku 5.5: `enum-ctx-029`
+## Claude Haiku 5.5: `enum-ctx-029`
 
 **Question** (enumeration, csv format, 500 records, ~7.9k tokens of data, 50 correct answers): List the names of all employees whose department is Support.
 
