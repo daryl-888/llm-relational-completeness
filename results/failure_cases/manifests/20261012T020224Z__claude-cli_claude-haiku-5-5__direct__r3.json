@@ -1,0 +1,69 @@
+{
+ "created_at": "2026-10-12T02:02:24+00:00",
+ "model": "claude-cli/claude-haiku-5-5",
+ "variant": "direct",
+ "repeat": 3,
+ "max_tokens": 32768,
+ "command": [
+  "/home/daryl/Projects/Repos/llm-relational-completeness/.venv/bin/python",
+  "scripts/run.py",
+  "--model",
+  "claude-cli/claude-haiku-5-5",
+  "--ids",
+  "enum-par-013",
+  "enum-par-021",
+  "sel-029",
+  "join-004",
+  "nest-022",
+  "proj-031",
+  "agg-015",
+  "enum-ctx-029",
+  "--repeat",
+  "3",
+  "--workers",
+  "4",
+  "--out",
+  "results/failure_cases"
+ ],
+ "n_questions": 8,
+ "question_ids_sha256": "09cc7d7fe43e5f4ed3de5568d57359235cb3857c3278e4d7ec25394186ee9829",
+ "question_ids": [
+  "enum-ctx-029",
+  "enum-par-013",
+  "enum-par-021",
+  "sel-029",
+  "proj-031",
+  "join-004",
+  "agg-015",
+  "nest-022"
+ ],
+ "benchmark": {
+  "path": "data/benchmark_v0",
+  "sha256": "b2bc2242be80de6fd8949aa6200a2dc10df9f5f079fde9cad3ca796a59eef08d"
+ },
+ "code_sha256": "500cbb9870304171dda0bc9dc729de42d07c794a832687c44473670399ba7132",
+ "git": {
+  "commit": "8c4656dfd95e9477b03dd2f886aff49acc2d02cc",
+  "dirty": true
+ },
+ "prompts": {
+  "system": "You answer questions about data precisely and follow the requested output format exactly.",
+  "variants": {
+   "direct": null,
+   "exhaustive": "Your answer must be complete: include every item that satisfies the question, not a sample of them, and do not stop early. Do not include anything that does not satisfy it.",
+   "rowwise": "Before answering, go through the records one at a time and note whether each one qualifies. Then give the final answer."
+  },
+  "rowwise_parametric": "Before answering, systematically enumerate every candidate in the category and check each one against the condition. Then give the final answer."
+ },
+ "python": "3.14.4 (main, Aug 20 2026, 10:41:58) [GCC 15.2.0]",
+ "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43",
+ "packages": {
+  "openai": "3.29.0",
+  "faker": "40.43.0",
+  "pandas": "3.0.6",
+  "periodictable": "2.1.0",
+  "rank-bm25": "0.2.2",
+  "matplotlib": "3.11.2"
+ },
+ "claude_cli_version": "2.1.296 (Claude Code)"
+}

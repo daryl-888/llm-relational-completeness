@@ -1,0 +1,162 @@
+\documentclass[11pt]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage{booktabs,graphicx,amsmath,hyperref,xcolor,enumitem}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\hypersetup{colorlinks=true,linkcolor=black,urlcolor=blue!50!black,citecolor=black}
+\setlist{nosep,leftmargin=*}
+\input{generated/facts.tex}
+\newcommand{\maybeinput}[1]{\IfFileExists{#1}{\input{#1}}{\textit{(not yet available)}}}
+
+\title{Completeness of Relational Operations in LLMs:\\\large Benchmark Construction and Preliminary Results}
+\author{Daryl Alfaro}
+\date{\rundate}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+We measure whether large language models return \emph{complete} answers when asked for every item that
+satisfies a condition. We built a 500-question benchmark covering enumeration and SQL-like relational
+operations (selection, projection, JOIN, aggregation, nested queries and set operations) over synthetic data
+whose correct answers are computed by executing SQL. We evaluated six models from three families.
+%RESULTS-ABSTRACT%
+\end{abstract}
+
+\section{How the benchmark works}
+
+\subsection{Synthetic data with executable ground truth}
+All data in the in-context and retrieval settings is generated from a fixed random seed: 575 tables containing
+110{,}146 records about fictional employees, products, students, books, customers, orders, projects, ID badges
+and club rosters. Names, cities, brands, titles and codes are invented, so a model cannot answer from memorised
+knowledge and must read the records it is given. Every question is generated together with the SQL query that
+defines it, and its gold answer is the result of running that query in SQLite. No answer is written by hand, and
+an automated test re-executes every query and checks it against the stored answer.
+
+\subsection{Controlling answer size and table size}
+For in-context enumeration (``list all employees whose department is Legal''), the generator assigns the target
+value to exactly $g$ rows of an $n$-row table, with $g \in \{5,10,20,50,100\}$ and
+$n \in \{50,200,500,1000\}$ ($g \le n/2$). The matching rows are placed at random positions, which are stored
+so that misses can be located. For the other operations, the generator repeatedly samples random queries from
+templates, executes them, and keeps the first whose result size falls in a target range. Each filtering
+condition is produced in SQL and in English from a single source, so the two cannot disagree.
+
+\subsection{Settings and operations}
+\begin{itemize}
+\item \textbf{In context} (400 questions): all records are in the prompt, so any omission is the model's.
+\item \textbf{Memory only} (60): closed lists (U.S.\ states, chemical elements, presidents' surnames)
+  filtered by properties computed in code, e.g.\ states ending in ``a'' or elements with atomic number 21--36.
+\item \textbf{Retrieval} (40): BM25 retrieves the top $k \in \{10,20,50\}$ records from a 200- or 500-record
+  corpus. Recall is also reported over only the correct records that were retrieved.
+\end{itemize}
+Records are rendered as Markdown tables, CSV, JSON Lines or English sentences, rotating across questions.
+Table~\ref{tab:composition} lists the slices.
+
+\begin{table}[h]
+\centering\small
+\input{generated/composition.tex}
+\caption{Benchmark composition (500 questions). Answer size is the number of correct items (for
+aggregation, the number of records aggregated).}
+\label{tab:composition}
+\end{table}
+
+\subsection{Prompting and model access}
+Each prompt contains the data, the question, and a required JSON output format
+(\texttt{\{"answer": [...]\}}). Three prompt variants are used: \emph{direct} (answer only),
+\emph{exhaustive} (an explicit instruction to include every qualifying item) and \emph{rowwise} (check each
+record, then answer). We evaluated six models: Claude Haiku 4.5 and Haiku 5.5 through the Claude Code CLI
+(\claudecli) with no tools and a fixed system prompt, and DeepSeek V4 Pro and Flash and MiMo-V2.6 Pro and Flash
+through the OpenCode Go API at temperature 0 with a 32{,}768-token output limit. All models used their default
+reasoning (``thinking'') behaviour.
+
+\subsection{Scoring}
+The scorer extracts the last JSON answer from the response and normalises case, accents, whitespace and number
+formatting. For set answers it computes precision, recall, F1 and exact-set match, and classifies every error
+as \emph{missing} (a correct item omitted), \emph{wrong} (an item present in the data that does not satisfy the
+question), \emph{made-up} (an item not present in the data) or \emph{duplicate}. Scalar aggregates (COUNT, SUM,
+MIN, MAX, AVG) are scored by exact match and signed error, so undercounting can be distinguished from
+overcounting. Responses cut off by the output limit are reported separately.
+
+\subsection{Experiments and reproducibility}
+\begin{enumerate}
+\item \textbf{E1:} all 500 questions, direct prompt, every model.
+\item \textbf{E2:} a stratified 100-question subset (every fifth question) with the exhaustive and rowwise prompts.
+\item \textbf{E3:} the same subset, direct prompt, sampled a second time to measure run-to-run variation.
+\end{enumerate}
+Every call is logged with the full response, the served model identifier, token usage, latency, timestamps,
+request parameters and a hash of the exact prompt. Each run writes a manifest with the code commit
+(\texttt{\gitcommit}), a hash of the benchmark files (\texttt{\benchsha\ldots}), the question identifiers and
+all software versions. Code and data:
+\url{https://github.com/daryl-888/llm-relational-completeness}.
+
+\section{Results}
+%RESULTS-TEXT%
+
+\begin{table}[h]
+\centering\small
+\resizebox{\linewidth}{!}{\input{generated/overall.tex}}
+\caption{E1, direct prompt: mean over set-valued questions (all slices except scalar aggregation). Error
+columns are total item counts.}
+\label{tab:overall}
+\end{table}
+
+\begin{table}[h]
+\centering\small
+\resizebox{\linewidth}{!}{\input{generated/recall_by_slice.tex}}
+\caption{E1: mean recall by slice.}
+\label{tab:slice}
+\end{table}
+
+\begin{table}[h]
+\centering\small
+\resizebox{\linewidth}{!}{\input{generated/exact_by_slice.tex}}
+\caption{E1: fraction of questions answered with exactly the correct set.}
+\label{tab:exact}
+\end{table}
+
+\begin{figure}[h]
+\centering
+\includegraphics[width=\linewidth]{generated/enumeration_curves.pdf}
+\caption{In-context enumeration (E1): mean recall against the number of correct items (left) and table size
+(right).}
+\label{fig:curves}
+\end{figure}
+
+\begin{figure}[h]
+\centering
+\includegraphics[width=0.65\linewidth]{generated/miss_by_position.pdf}
+\caption{In-context enumeration (E1): fraction of correct rows omitted, by the row's position in the table.}
+\label{fig:position}
+\end{figure}
+
+\begin{table}[h]
+\centering\small
+\maybeinput{generated/scalar.tex}
+\caption{E1, scalar aggregation (35 questions): exact answers and direction of error.}
+\label{tab:scalar}
+\end{table}
+
+\begin{table}[h]
+\centering\small
+\maybeinput{generated/variants.tex}
+\caption{E2: mean recall on the 100-question subset by prompt variant (questions answered under all three prompts).}
+\label{tab:variants}
+\end{table}
+
+\begin{table}[h]
+\centering\small
+\resizebox{\linewidth}{!}{\maybeinput{generated/repeats.tex}}
+\caption{E3: agreement between two independent runs of the direct prompt on the subset.}
+\label{tab:repeats}
+\end{table}
+
+\begin{table}[h]
+\centering\small
+\resizebox{\linewidth}{!}{\input{generated/usage.tex}}
+\caption{Usage across all experiments (\totalcalls\ calls, including retries). Cost is at provider list prices;
+the Claude models were accessed through a subscription and OpenCode Go usage drew \$\gocost\ from a subscription
+allowance.}
+\label{tab:usage}
+\end{table}
+
+\end{document}

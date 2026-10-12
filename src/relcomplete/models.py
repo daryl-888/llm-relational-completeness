@@ -3,6 +3,7 @@
   claude-cli/<model>   the local Claude Code CLI (`claude -p`), billed to a Claude subscription
   opencode-go/<model>  OpenCode Go subscription (DeepSeek V4, MiMo, Kimi, GLM, ...), key OPENCODE_GO_API_KEY
   deepseek/<model>     DeepSeek's own API, key DEEPSEEK_API_KEY
+  openrouter/<model>   OpenRouter explicitly (for model ids whose first part is another provider prefix)
   <anything else>      OpenRouter, or LLM_BASE_URL if set, key OPENROUTER_API_KEY
 
 Mock models ("mock/oracle", "mock/drop20") answer from the gold data so the whole
@@ -30,6 +31,7 @@ USER_AGENT = "relcomplete-benchmark/0.1"
 PROVIDERS = {
     "opencode-go": ("https://opencode.ai/zen/go/v1", "OPENCODE_GO_API_KEY"),
     "deepseek": ("https://api.deepseek.com", "DEEPSEEK_API_KEY"),
+    "openrouter": (DEFAULT_BASE_URL, "OPENROUTER_API_KEY"),  # explicit, e.g. openrouter/deepseek/deepseek-v4-pro
 }
 
 

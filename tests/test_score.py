@@ -17,7 +17,7 @@ class FakeBench:
 def test_norm():
     assert norm("  José  Núñez ") == "jose nunez"
     assert norm("$1,200") == norm(1200) == norm("1200.0") == "1200"
-    assert norm('"The Silent Harbor".') == "the silent harbor"
+    assert norm('"The Silent Harbor".') == norm("silent harbor") == "silent harbor"
     assert norm(3.10) == "3.1"
 
 
@@ -78,3 +78,24 @@ def test_mock_models_score_as_expected(bench):
             assert m["precision"] == 1.0 and m["made_up"] == 0
             drops.append(m["recall"])
     assert 0.7 < sum(drops) / len(drops) < 0.9
+
+
+def test_dropped_or_added_prefix_still_matches():
+    q = q_set([["Ann Lee", "Project Rathaty"]], fields=("employee name", "project name"))
+    assert score(q, FakeBench(), '{"answer": [["Ann Lee", "Rathaty"]]}')["exact"]
+    q = q_set([["Fenvi X-397"]], fields=("product name",))
+    assert score(q, FakeBench(), '{"answer": ["The Fenvi X-397"]}')["exact"]
+
+
+def test_near_miss_is_its_own_category():
+    q = q_set([["Ratygri S-799"], ["Northa P-537"], ["Solkaost V-528"]])
+    m = score(q, FakeBench(), '{"answer": ["Raty gri S-799", "Northa P-537", "Totally Different"]}')
+    assert (m["tp"], m["near_miss"], m["made_up"], m["missing"]) == (1, 1, 1, 1)
+    assert m["recall"] == 1 / 3 and m["lenient_recall"] == 2 / 3
+    assert m["near_miss_pairs"] == [[["raty gri s-799"], ["ratygri s-799"]]]
+
+
+def test_keys_stay_unique_after_normalisation(bench):
+    for t in bench.tables.values():
+        keys = [norm(k) for k in t.col(t.key)]
+        assert len(keys) == len(set(keys)), t.id

@@ -12,6 +12,10 @@ PRICES = {
     "opencode-go/deepseek-v4-flash": (0.15, 0.60, 0.003),
     "opencode-go/mimo-v2.6-pro": (0.435, 0.87, 0.003625),
     "opencode-go/mimo-v2.6-flash": (0.14, 0.28, 0.0028),
+    "openrouter/deepseek/deepseek-v4-pro": (0.948, 1.897, 0.0),  # OpenRouter listing 2026-10-12
+    "openrouter/deepseek/deepseek-v4-flash": (0.006, 1.28, 0.0),  # OpenRouter listing 2026-10-12
+    "xiaomi/mimo-v2.6-flash": (0.14, 0.28, 0.0028),  # OpenRouter
+    "xiaomi/mimo-v2.6-pro": (0.435, 0.87, 0.003625),  # OpenRouter
     "claude-cli/claude-haiku-4-5-20251001": (1.00, 5.00, 0.10),
     "claude-cli/claude-haiku-4-5": (1.00, 5.00, 0.10),  # smoke-test label for the same model
 }

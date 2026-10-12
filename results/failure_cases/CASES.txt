@@ -1,0 +1,6 @@
+# model | question ids — each re-run with --repeat 1 2 3 to test whether the original failure reproduces
+claude-cli/claude-haiku-5-5 | enum-par-013 enum-par-021 sel-029 join-004 nest-022 proj-031 agg-015 enum-ctx-029
+opencode-go/deepseek-v4-pro -> openrouter/deepseek/deepseek-v4-pro | enum-ctx-029
+opencode-go/mimo-v2.6-flash -> xiaomi/mimo-v2.6-flash | enum-ctx-029 enum-ctx-035
+opencode-go/mimo-v2.6-pro -> xiaomi/mimo-v2.6-pro | enum-ctx-029
+opencode-go/deepseek-v4-flash -> openrouter/deepseek/deepseek-v4-flash | enum-ctx-018

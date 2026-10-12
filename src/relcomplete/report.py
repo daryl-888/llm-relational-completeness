@@ -11,6 +11,7 @@ import matplotlib.pyplot as plt  # noqa: E402
 import pandas as pd  # noqa: E402
 
 from .schema import Benchmark  # noqa: E402
+from .score import score  # noqa: E402
 from .usage import normalise  # noqa: E402
 
 
@@ -32,7 +33,7 @@ def load_results(results_dir: Path, bench: Benchmark) -> pd.DataFrame:
                          "n_gold": q.meta["n_gold"], "n_rows": q.meta["n_rows"],
                          "difficulty": q.meta["difficulty"], "error": r.get("error"),
                          "finish_reason": r.get("finish_reason"), "cached": r.get("cached", False),
-                         **normalise(r), **r["metrics"]})
+                         **normalise(r), **score(q, bench, r.get("text"))})  # re-scored with the current scorer
     return pd.DataFrame(recs)
 
 
@@ -69,7 +70,7 @@ def summary_tables(df: pd.DataFrame, usage: pd.DataFrame | None = None) -> str:
     out.append(d.pivot_table(index="slice", columns="model", values="recall", aggfunc="mean").round(3).to_markdown())
     out.append("\n\n## Exact-set accuracy by slice (direct prompting)\n")
     out.append(d.pivot_table(index="slice", columns="model", values="exact", aggfunc="mean").round(3).to_markdown())
-    errs = d.groupby("model")[["tp", "missing", "wrong", "made_up", "duplicates"]].sum()
+    errs = d.groupby("model")[["tp", "missing", "near_miss", "wrong", "made_up", "duplicates"]].sum()
     out.append("\n\n## Error counts (direct prompting, set answers)\n")
     out.append(errs.to_markdown())
     sc = df[df.answer_type == "scalar"]

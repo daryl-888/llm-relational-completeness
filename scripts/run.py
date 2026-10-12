@@ -33,7 +33,8 @@ def load_env(path: Path = Path(".env")) -> None:
         for line in path.read_text().splitlines():
             if "=" in line and not line.lstrip().startswith("#"):
                 k, v = line.split("=", 1)
-                os.environ.setdefault(k.strip(), v.strip().strip('"'))
+                if v.strip().strip('"'):  # an empty placeholder must not shadow a key set further down
+                    os.environ.setdefault(k.strip(), v.strip().strip('"'))
 
 
 def finished(rec: dict, max_tokens: int) -> bool:

@@ -1,0 +1,55 @@
+{
+ "created_at": "2026-10-12T02:11:18+00:00",
+ "model": "openrouter/deepseek/deepseek-v4-pro",
+ "variant": "direct",
+ "repeat": 2,
+ "max_tokens": 32768,
+ "command": [
+  "/home/daryl/Projects/Repos/llm-relational-completeness/.venv/bin/python",
+  "scripts/run.py",
+  "--model",
+  "openrouter/deepseek/deepseek-v4-pro",
+  "--ids",
+  "enum-ctx-029",
+  "--repeat",
+  "2",
+  "--workers",
+  "1",
+  "--out",
+  "results/failure_cases"
+ ],
+ "n_questions": 1,
+ "question_ids_sha256": "e1fe33ab40eae07b80a1c3464b73364c8aacd0aa026a2ede53ab4a1966c8e14d",
+ "question_ids": [
+  "enum-ctx-029"
+ ],
+ "benchmark": {
+  "path": "data/benchmark_v0",
+  "sha256": "b2bc2242be80de6fd8949aa6200a2dc10df9f5f079fde9cad3ca796a59eef08d"
+ },
+ "code_sha256": "7870fddd16f103bb5b5d06dc2a56ad766d64a84940ac18e2a4b8270bf7ea65f9",
+ "git": {
+  "commit": "8c4656dfd95e9477b03dd2f886aff49acc2d02cc",
+  "dirty": true
+ },
+ "prompts": {
+  "system": "You answer questions about data precisely and follow the requested output format exactly.",
+  "variants": {
+   "direct": null,
+   "exhaustive": "Your answer must be complete: include every item that satisfies the question, not a sample of them, and do not stop early. Do not include anything that does not satisfy it.",
+   "rowwise": "Before answering, go through the records one at a time and note whether each one qualifies. Then give the final answer."
+  },
+  "rowwise_parametric": "Before answering, systematically enumerate every candidate in the category and check each one against the condition. Then give the final answer."
+ },
+ "python": "3.14.4 (main, Aug 20 2026, 10:41:58) [GCC 15.2.0]",
+ "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43",
+ "packages": {
+  "openai": "3.29.0",
+  "faker": "40.43.0",
+  "pandas": "3.0.6",
+  "periodictable": "2.1.0",
+  "rank-bm25": "0.2.2",
+  "matplotlib": "3.11.2"
+ },
+ "claude_cli_version": null
+}
