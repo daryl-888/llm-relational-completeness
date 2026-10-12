@@ -13,7 +13,7 @@ from relcomplete.score import norm, score
 
 ROOT = Path(__file__).resolve().parents[1]
 MAIN, RERUNS = ROOT / "results" / "full_v0", ROOT / "results" / "failure_cases"
-SHORT = {"claude-cli/claude-haiku-5-5": "Haiku 5.5", "opencode-go/deepseek-v4-pro": "DeepSeek V4 Pro",
+SHORT = {"claude-cli/claude-haiku-5-5": "Claude Haiku 5.5", "opencode-go/deepseek-v4-pro": "DeepSeek V4 Pro",
          "opencode-go/deepseek-v4-flash": "DeepSeek V4 Flash", "opencode-go/mimo-v2.6-flash": "MiMo-V2.6 Flash",
          "opencode-go/mimo-v2.6-pro": "MiMo-V2.6 Pro"}
 # (model that failed in the main run, model id used for the re-runs, question id)

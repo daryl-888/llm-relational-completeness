@@ -1,11 +1,11 @@
-\begin{tabular}{lrrrrrr}
+\begin{tabular}{llrrrrrr}
 \toprule
-Model & Calls & Input (M) & Output (M) & of which reasoning (M) & Cost (USD) & Median latency (s) \\
+Model & Access & Calls & Input (M) & Output (M) & Reasoning (\%) & Cost (USD) & Latency (s) \\
 \midrule
-DeepSeek V4 Pro & 1021 & 3.83 & 2.21 & 2.14 & 6.87 & 23.43 \\
-DeepSeek V4 Flash & 1307 & 5.08 & 3.02 & 2.81 & 2.52 & 12.48 \\
-Haiku 5.5 & 893 & 8.04 & 1.88 & 1.64 & 2.49 & 7.70 \\
-MiMo-V2.6 Pro & 800 & 5.77 & 2.00 & 1.78 & 3.29 & 16.65 \\
-MiMo-V2.6 Flash & 800 & 5.78 & 1.72 & 1.32 & 1.25 & 13.10 \\
+DeepSeek V4 Pro & OpenCode Go & 1,027 & 3.83 & 2.21 & 97 & 6.87 & 23.4 \\
+DeepSeek V4 Flash & OpenCode Go & 1,307 & 5.08 & 3.02 & 93 & 2.52 & 12.5 \\
+Claude Haiku 5.5 & Claude Code CLI & 893 & 8.04 & 1.88 & 87 & 2.49 & 7.7 \\
+MiMo-V2.6 Pro & OpenRouter & 800 & 5.77 & 2.00 & 89 & 3.29 & 16.6 \\
+MiMo-V2.6 Flash & OpenRouter & 800 & 5.78 & 1.72 & 77 & 1.25 & 13.1 \\
 \bottomrule
 \end{tabular}
