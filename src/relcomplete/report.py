@@ -93,6 +93,7 @@ def summary_tables(df: pd.DataFrame, usage: pd.DataFrame | None = None) -> str:
     out.append(df.groupby(["model", "variant"]).agg(
         parse_fail=("parse_ok", lambda s: (~s.astype(bool)).sum()),
         api_error=("error", lambda s: s.notna().sum()),
+        blocked=("error", lambda s: s.fillna("").str.lower().str.contains("content filtering").sum()),
         truncated=("finish_reason", lambda s: (s == "length").sum())).to_markdown())
     return "\n".join(out) + "\n"
 

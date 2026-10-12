@@ -158,12 +158,18 @@ def claude_cli(model: str, messages: list[dict], timeout: int = 600) -> dict:
     except (subprocess.TimeoutExpired, json.JSONDecodeError) as e:
         return {"text": None, "error": repr(e)[:500], "usage": {}}
     if r.get("is_error"):  # includes subscription usage-limit messages; not cached, so a re-run retries
-        return {"text": None, "error": str(r.get("result"))[:500], "usage": r.get("usage", {})}
+        msg = str(r.get("result"))[:500]
+        return {"text": None, "error": msg, "usage": r.get("usage", {}), "blocked": is_blocked(msg)}
     return {"text": r.get("result"), "finish_reason": r.get("stop_reason"), "usage": r.get("usage", {}),
             "models": list(r.get("modelUsage", {})), "model_usage": r.get("modelUsage", {}),
             "cli": {k: r.get(k) for k in ("duration_ms", "duration_api_ms", "num_turns", "terminal_reason",
                                           "session_id")},
             "cost_usd": r.get("total_cost_usd")}  # list-price equivalent; a subscription is not billed per call
+
+
+def is_blocked(error: str | None) -> bool:
+    """A provider safety filter refused the request: a final outcome, not something a retry fixes."""
+    return bool(error) and "content filtering" in error.lower()
 
 
 def mock_response(model: str, q: Question) -> str:

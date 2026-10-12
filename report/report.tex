@@ -10,7 +10,7 @@
 
 \title{Completeness of Relational Operations in LLMs:\\\large Benchmark Construction and Preliminary Results}
 \author{Daryl Alfaro}
-\date{\rundate}
+\date{\today}
 
 \begin{document}
 \maketitle
@@ -19,8 +19,13 @@
 We measure whether large language models return \emph{complete} answers when asked for every item that
 satisfies a condition. We built a 500-question benchmark covering enumeration and SQL-like relational
 operations (selection, projection, JOIN, aggregation, nested queries and set operations) over synthetic data
-whose correct answers are computed by executing SQL. We evaluated six models from three families.
-%RESULTS-ABSTRACT%
+whose correct answers are computed by executing SQL. We evaluated five models from three families.
+Across 465 set-valued questions, mean recall is high (0.957--0.986) and precision higher still, but
+exact-set accuracy ranges from 97\% down to 81\%: the dominant error is omission. Exact-set accuracy falls as the
+number of correct items grows (for one model, from 100\% at 5 items to 38\% at 100), models that stay complete
+spend several times more reasoning tokens on larger answer sets, and instructing models to be exhaustive or to
+check records one by one helps only one of four models. One model fabricates plausible items on long lists (991 made-up items on a single
+question). Re-running individual failures shows that some are systematic and others are run-to-run variation.
 \end{abstract}
 
 \section{How the benchmark works}
@@ -52,9 +57,9 @@ condition is produced in SQL and in English from a single source, so the two can
 Records are rendered as Markdown tables, CSV, JSON Lines or English sentences, rotating across questions.
 Table~\ref{tab:composition} lists the slices.
 
-\begin{table}[h]
+\begin{table}[htbp]
 \centering\small
-\input{generated/composition.tex}
+\resizebox{\linewidth}{!}{\input{generated/composition.tex}}
 \caption{Benchmark composition (500 questions). Answer size is the number of correct items (for
 aggregation, the number of records aggregated).}
 \label{tab:composition}
@@ -64,10 +69,10 @@ aggregation, the number of records aggregated).}
 Each prompt contains the data, the question, and a required JSON output format
 (\texttt{\{"answer": [...]\}}). Three prompt variants are used: \emph{direct} (answer only),
 \emph{exhaustive} (an explicit instruction to include every qualifying item) and \emph{rowwise} (check each
-record, then answer). We evaluated six models: Claude Haiku 4.5 and Haiku 5.5 through the Claude Code CLI
-(\claudecli) with no tools and a fixed system prompt, and DeepSeek V4 Pro and Flash and MiMo-V2.6 Pro and Flash
-through the OpenCode Go API at temperature 0 with a 32{,}768-token output limit. All models used their default
-reasoning (``thinking'') behaviour.
+record, then answer). We evaluated five models: Claude Haiku 5.5 through the Claude Code CLI (\claudecli) with no tools and a fixed
+system prompt; DeepSeek V4 Pro and V4 Flash through the OpenCode Go API; and MiMo-V2.6 Pro and Flash through
+OpenRouter. API calls used temperature 0 and a 32{,}768-token output limit; the Claude CLI does not expose a
+temperature setting. All models used their default reasoning (``thinking'') behaviour.
 
 \subsection{Scoring}
 The scorer extracts the last JSON answer from the response and normalises case, accents, whitespace and number
@@ -84,15 +89,87 @@ overcounting. Responses cut off by the output limit are reported separately.
 \item \textbf{E3:} the same subset, direct prompt, sampled a second time to measure run-to-run variation.
 \end{enumerate}
 Every call is logged with the full response, the served model identifier, token usage, latency, timestamps,
-request parameters and a hash of the exact prompt. Each run writes a manifest with the code commit
-(\texttt{\gitcommit}), a hash of the benchmark files (\texttt{\benchsha\ldots}), the question identifiers and
+request parameters and a hash of the exact prompt. Each run writes a manifest with the code commit (the first run used
+\texttt{\gitcommit}), a hash of the benchmark files (\texttt{\benchsha\ldots}), the question identifiers and
 all software versions. Code and data:
 \url{https://github.com/daryl-888/llm-relational-completeness}.
 
 \section{Results}
-%RESULTS-TEXT%
 
-\begin{table}[h]
+All numbers are from experiment E1 (direct prompt, first sample) unless stated otherwise. Five models completed
+all 500 questions. MiMo-V2.6 was run on OpenRouter after OpenCode Go usage caps stalled it; its partial OpenCode
+Go runs, and a Haiku 4.5 run stopped after 90 questions, are excluded from the tables. Responses were re-scored
+from the saved text with the final version of the scorer.
+
+\subsection{Overall: high recall, but incomplete answers are common}
+Table~\ref{tab:overall} summarises the 465 set-valued questions. Recall is between 0.957 and 0.986 and precision
+between 0.975 and 0.998, yet only 81--97\% of answers are exactly the correct set. Errors are overwhelmingly
+\emph{missing} items: apart from MiMo-V2.6 Flash, the models together returned 32 wrong items and no made-up ones.
+(Most missing items in Table~\ref{tab:overall} come from the retrieval slice, where they are caused by retrieval;
+on the 365 in-context set questions the models missed 16, 43, 75, 104 and 492 items, in the order of Table~\ref{tab:overall}.) MiMo-V2.6 Flash is the
+exception: it returned 1{,}032 items that do not exist in the data, 991 of them (with 245 duplicates) on a
+single 100-item question. Twenty of its made-up items come from one answer that named the right products but
+dropped their model codes (``Dornor'' for ``Dornor M-670''); because base names repeat across products, these do
+not identify the items and are scored as wrong. Three answers ran to the output limit (in one, MiMo-V2.6 Pro's
+reasoning repeated the word ``Office'' until the limit) and one was refused by a content filter (Haiku 5.5,
+listing the elements with atomic numbers 55--86).
+
+\subsection{By operation}
+Tables~\ref{tab:slice} and~\ref{tab:exact} break results down by slice. Set operations are solved almost
+perfectly by every model. Enumeration in context, JOIN, projection and grouped aggregation show the largest gaps
+between recall and exact accuracy. In the memory-only setting, the DeepSeek models answered every question
+exactly, while the other three missed members of short closed lists (Haiku 5.5, for example, listed Kentucky but
+not New Jersey as a U.S.\ state ending in ``y''). Retrieval-setting recall (0.87) is identical for all models and
+equals the retrieval step's recall: every model returned every correct item that was retrieved
+(Table~\ref{tab:rag}), so with this BM25 configuration the retrieval slice measures the retriever, not the model.
+
+\subsection{Answer-set size}
+For in-context enumeration, Table~\ref{tab:enumsize} and Figure~\ref{fig:curves} show exact-set accuracy falling
+as the number of correct items grows. At 5 items four of five models are exact on at least 96\% of questions; at
+50 items Haiku 5.5 is exact on 50\%, MiMo-V2.6 Pro on 62\% and MiMo-V2.6 Flash on 31\%. The two DeepSeek models
+stay at 88--100\%. Recall falls more gently, because the typical failure drops a few items from a long list.
+Recall also falls with table size for MiMo-V2.6 Flash (from 1.00 at 50 rows to 0.83 at 1{,}000 rows).
+
+\subsection{The cost of completeness}
+Reasoning effort grows with answer size for the models that stay complete (Figure~\ref{fig:reasoning}): the
+median reasoning length rises from roughly 1{,}000--2{,}000 tokens at 5 items to roughly 9{,}000 at 100 items for
+the DeepSeek models, and from 170 to 6{,}400 tokens for Haiku 5.5. MiMo-V2.6 Flash frequently answers after only
+10--15 reasoning tokens on the larger questions, and those answers account for most of its omissions and
+fabrications. This is a correlation across questions, not a controlled manipulation of reasoning effort.
+
+\subsection{Position in the table}
+Figure~\ref{fig:position} shows the miss rate of correct rows by their position in the table. For MiMo-V2.6 Flash
+the miss rate rises steadily with position, from about 2\% for rows near the top of the table to 11--13\% near the
+bottom. The other models miss too few rows for a clear pattern; Haiku 5.5's misses are concentrated in the first
+half. There is no U-shaped ``lost in the middle'' profile.
+
+\subsection{Aggregation}
+On the 35 scalar aggregation questions (Table~\ref{tab:scalar}), both DeepSeek models answered every question
+exactly. Every error by the other three models was an undercount, except two MiMo-V2.6 Flash overcounts, which is
+consistent with items being dropped before counting.
+
+\subsection{Prompting}
+On the 100-question subset (Table~\ref{tab:variants}), the alternative prompts made no difference for DeepSeek
+V4 Flash or Haiku 5.5 (recall within 0.003 of the direct prompt). MiMo-V2.6 Pro improved, from 0.963 to 0.972
+with the exhaustive instruction and to 0.985 when asked to check each record first. MiMo-V2.6 Flash got slightly
+worse with the exhaustive instruction (0.960 to 0.937). DeepSeek V4 Pro's prompt-variant runs had not finished
+under its provider's usage caps and are not reported.
+
+\subsection{Run-to-run variation and reproducible failures}
+Two independent samples of the same 100 prompts gave the same exact/inexact verdict on 87--100\% of questions
+(Table~\ref{tab:repeats}). To test whether individual failures are systematic, 13 failures were re-run three more
+times on the same model (Table~\ref{tab:cases}). Some reproduce every time: Haiku 5.5 omitted the same U.S.\ states
+from memory in all three re-runs, and DeepSeek V4 Pro and MiMo-V2.6 Flash both dropped items from the same 50-item
+list in every re-run. When MiMo-V2.6 Pro failed on that list it omitted the same three employees each time. Other
+failures, including Haiku 5.5's misses on selection, JOIN, projection and COUNT questions, did not recur. For the
+stronger models, incompleteness is therefore best described as a rate that rises with answer-set size rather than
+as a fixed set of questions that always fail.
+
+\subsection{Usage}
+Table~\ref{tab:usage} lists token usage and cost. Reasoning accounts for 77--97\% of output tokens.
+
+
+\begin{table}[htbp]
 \centering\small
 \resizebox{\linewidth}{!}{\input{generated/overall.tex}}
 \caption{E1, direct prompt: mean over set-valued questions (all slices except scalar aggregation). Error
@@ -100,21 +177,42 @@ columns are total item counts.}
 \label{tab:overall}
 \end{table}
 
-\begin{table}[h]
+\begin{table}[htbp]
 \centering\small
 \resizebox{\linewidth}{!}{\input{generated/recall_by_slice.tex}}
 \caption{E1: mean recall by slice.}
 \label{tab:slice}
 \end{table}
 
-\begin{table}[h]
+\begin{table}[htbp]
 \centering\small
 \resizebox{\linewidth}{!}{\input{generated/exact_by_slice.tex}}
 \caption{E1: fraction of questions answered with exactly the correct set.}
 \label{tab:exact}
 \end{table}
 
-\begin{figure}[h]
+\begin{table}[htbp]
+\centering\small
+\resizebox{\linewidth}{!}{\input{generated/enum_exact_by_size.tex}}
+\caption{E1, in-context enumeration: fraction of questions answered exactly, by number of correct items.}
+\label{tab:enumsize}
+\end{table}
+
+\begin{table}[htbp]
+\centering\small
+\input{generated/rag.tex}
+\caption{E1, retrieval setting: recall over all correct items, and over the correct items that retrieval returned.}
+\label{tab:rag}
+\end{table}
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.65\linewidth]{generated/reasoning_vs_size.pdf}
+\caption{In-context enumeration (E1): median reasoning tokens against the number of correct items.}
+\label{fig:reasoning}
+\end{figure}
+
+\begin{figure}[htbp]
 \centering
 \includegraphics[width=\linewidth]{generated/enumeration_curves.pdf}
 \caption{In-context enumeration (E1): mean recall against the number of correct items (left) and table size
@@ -122,35 +220,44 @@ columns are total item counts.}
 \label{fig:curves}
 \end{figure}
 
-\begin{figure}[h]
+\begin{figure}[htbp]
 \centering
 \includegraphics[width=0.65\linewidth]{generated/miss_by_position.pdf}
 \caption{In-context enumeration (E1): fraction of correct rows omitted, by the row's position in the table.}
 \label{fig:position}
 \end{figure}
 
-\begin{table}[h]
+\begin{table}[htbp]
 \centering\small
 \maybeinput{generated/scalar.tex}
 \caption{E1, scalar aggregation (35 questions): exact answers and direction of error.}
 \label{tab:scalar}
 \end{table}
 
-\begin{table}[h]
+\begin{table}[htbp]
 \centering\small
 \maybeinput{generated/variants.tex}
 \caption{E2: mean recall on the 100-question subset by prompt variant (questions answered under all three prompts).}
 \label{tab:variants}
 \end{table}
 
-\begin{table}[h]
+\begin{table}[htbp]
 \centering\small
 \resizebox{\linewidth}{!}{\maybeinput{generated/repeats.tex}}
 \caption{E3: agreement between two independent runs of the direct prompt on the subset.}
 \label{tab:repeats}
 \end{table}
 
-\begin{table}[h]
+\begin{table}[htbp]
+\centering\small
+\resizebox{\linewidth}{!}{\input{generated/failure_cases.tex}}
+\caption{Selected failures, each re-run three times on the same model. ``Reproduced'' counts re-runs that were
+again not exactly correct (an asterisk marks a re-run with no parseable answer, not counted). Models first run on
+OpenCode Go were re-run through OpenRouter.}
+\label{tab:cases}
+\end{table}
+
+\begin{table}[htbp]
 \centering\small
 \resizebox{\linewidth}{!}{\input{generated/usage.tex}}
 \caption{Usage across all experiments (\totalcalls\ calls, including retries). Cost is at provider list prices;

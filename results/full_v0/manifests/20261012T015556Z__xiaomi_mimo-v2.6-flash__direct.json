@@ -1,0 +1,53 @@
+{
+ "created_at": "2026-10-12T01:55:56+00:00",
+ "model": "xiaomi/mimo-v2.6-flash",
+ "variant": "direct",
+ "repeat": 0,
+ "max_tokens": 32768,
+ "command": [
+  "/home/daryl/Projects/Repos/llm-relational-completeness/.venv/bin/python",
+  "scripts/run.py",
+  "--model",
+  "xiaomi/mimo-v2.6-flash",
+  "--ids",
+  "enum-ctx-000",
+  "--out",
+  "results/full_v0",
+  "--workers",
+  "1"
+ ],
+ "n_questions": 1,
+ "question_ids_sha256": "71c3ffa2beb152b06fdcea7ec5340fc3cc4d063137e4b5773bcc1356e9ce13fa",
+ "question_ids": [
+  "enum-ctx-000"
+ ],
+ "benchmark": {
+  "path": "data/benchmark_v0",
+  "sha256": "b2bc2242be80de6fd8949aa6200a2dc10df9f5f079fde9cad3ca796a59eef08d"
+ },
+ "code_sha256": "6667137b43620bf377e0c0a1796e649261fb770f39aae44fb8051302832d498f",
+ "git": {
+  "commit": "8c4656dfd95e9477b03dd2f886aff49acc2d02cc",
+  "dirty": true
+ },
+ "prompts": {
+  "system": "You answer questions about data precisely and follow the requested output format exactly.",
+  "variants": {
+   "direct": null,
+   "exhaustive": "Your answer must be complete: include every item that satisfies the question, not a sample of them, and do not stop early. Do not include anything that does not satisfy it.",
+   "rowwise": "Before answering, go through the records one at a time and note whether each one qualifies. Then give the final answer."
+  },
+  "rowwise_parametric": "Before answering, systematically enumerate every candidate in the category and check each one against the condition. Then give the final answer."
+ },
+ "python": "3.14.4 (main, Aug 20 2026, 10:41:58) [GCC 15.2.0]",
+ "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43",
+ "packages": {
+  "openai": "3.29.0",
+  "faker": "40.43.0",
+  "pandas": "3.0.6",
+  "periodictable": "2.1.0",
+  "rank-bm25": "0.2.2",
+  "matplotlib": "3.11.2"
+ },
+ "claude_cli_version": null
+}

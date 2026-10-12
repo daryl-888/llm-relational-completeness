@@ -19,7 +19,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from pathlib import Path
 
-from relcomplete.models import Cache, Client
+from relcomplete.models import Cache, Client, is_blocked
 from relcomplete.prompts import VARIANTS, messages
 from relcomplete.provenance import manifest
 from relcomplete.schema import Benchmark
@@ -39,10 +39,12 @@ def load_env(path: Path = Path(".env")) -> None:
 
 def finished(rec: dict, max_tokens: int) -> bool:
     """A record counts as done unless it errored or was cut off by a lower token limit than the current one."""
-    if rec.get("text") is None:
-        return False
+    # Hitting the token limit is an outcome (e.g. a reasoning loop), even with no answer text: retrying at the
+    # same limit would only return the cached response. It is redone only if the limit has since been raised.
     if rec.get("finish_reason") in ("length", "max_tokens"):
         return (rec.get("params") or {}).get("max_tokens", 8192) >= max_tokens
+    if rec.get("text") is None:
+        return bool(rec.get("blocked") or is_blocked(rec.get("error")))  # a refusal is recorded, not retried
     return True
 
 

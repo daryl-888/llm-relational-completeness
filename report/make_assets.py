@@ -19,9 +19,11 @@ from relcomplete.score import norm  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / "report" / "generated"
-SHORT = {"claude-cli/claude-haiku-5-5": "Haiku 5.5", "claude-cli/claude-haiku-4-5-20251001": "Haiku 4.5",
+# Models in the report, with display names. MiMo was run to completion on OpenRouter; its partial OpenCode Go
+# runs and the stopped Haiku 4.5 run (90 questions) are left out of the tables.
+SHORT = {"claude-cli/claude-haiku-5-5": "Haiku 5.5",
          "opencode-go/deepseek-v4-pro": "DeepSeek V4 Pro", "opencode-go/deepseek-v4-flash": "DeepSeek V4 Flash",
-         "opencode-go/mimo-v2.6-pro": "MiMo-V2.6 Pro", "opencode-go/mimo-v2.6-flash": "MiMo-V2.6 Flash"}
+         "xiaomi/mimo-v2.6-pro": "MiMo-V2.6 Pro", "xiaomi/mimo-v2.6-flash": "MiMo-V2.6 Flash"}
 SLICE_ORDER = ["enumeration", "enumeration (parametric)", "enumeration (rag)", "selection", "projection", "join",
                "aggregation", "nested", "setop"]
 SLICE_TEX = {"enumeration": "Enumeration (in context)", "enumeration (parametric)": "Enumeration (memory)",
@@ -52,7 +54,8 @@ def main() -> None:
     OUT.mkdir(parents=True, exist_ok=True)
     bench = Benchmark.load(args.bench)
     all_df = load_results(args.results, bench)
-    all_df["Model"] = all_df.model.map(SHORT).fillna(all_df.model)
+    all_df = all_df[all_df.model.isin(SHORT)]
+    all_df["Model"] = all_df.model.map(SHORT)
     models = [m for m in SHORT.values() if m in set(all_df.Model)]
     df = all_df[(all_df.repeat == 0) & (all_df.variant == "direct")]
     sets = df[df.answer_type != "scalar"]
@@ -74,11 +77,12 @@ def main() -> None:
     def overall(g):
         return pd.Series({"Questions": len(g), "Recall": g.recall.mean(), "Precision": g.precision.mean(),
                           "Exact": g.exact.astype(bool).mean(), "Missing": int(g.missing.sum()),
-                          "Wrong": int(g.wrong.sum()), "Made-up": int(g.made_up.sum()),
-                          "Dupl.": int(g.duplicates.sum()),
-                          "Trunc.": int(g.finish_reason.isin(["length", "max_tokens"]).sum())})
+                          "Near-miss": int(g.near_miss.sum()), "Wrong": int(g.wrong.sum()),
+                          "Made-up": int(g.made_up.sum()), "Dupl.": int(g.duplicates.sum()),
+                          "Trunc.": int(g.finish_reason.isin(["length", "max_tokens"]).sum()),
+                          "Refused": int(g.error.fillna("").str.contains("content filtering").sum())})
     ov = sets.groupby("Model").apply(overall, include_groups=False).reindex(models)
-    for c in ["Questions", "Missing", "Wrong", "Made-up", "Dupl.", "Trunc."]:
+    for c in ["Questions", "Missing", "Near-miss", "Wrong", "Made-up", "Dupl.", "Trunc.", "Refused"]:
         ov[c] = ov[c].astype(int)
     ov = ov.sort_values("Recall", ascending=False)
     tex_table(ov, OUT / "overall.tex")
@@ -119,6 +123,31 @@ def main() -> None:
     fig.savefig(OUT / "enumeration_curves.pdf")
     plt.close(fig)
 
+    # The cost of completeness: reasoning tokens spent against answer size
+    fig, ax = plt.subplots(figsize=(5.5, 3.2))
+    for m in ov.index:
+        r = enum[enum.Model == m].groupby("n_gold").reasoning.median()
+        ax.plot(r.index, r.values, marker="o", ms=4, label=m)
+    ax.set(xscale="log", yscale="log", xlabel="Number of correct items", ylabel="Median reasoning tokens")
+    ax.grid(alpha=0.3)
+    ax.legend(fontsize=7)
+    fig.tight_layout()
+    fig.savefig(OUT / "reasoning_vs_size.pdf")
+    plt.close(fig)
+
+    # Enumeration exact-set accuracy by answer size, as a table
+    ex = enum.assign(x=enum.exact.astype(float)).pivot_table(index="n_gold", columns="Model", values="x")
+    ex = ex[[m for m in ov.index]]
+    ex.index.name = "Correct items"
+    tex_table(ex, OUT / "enum_exact_by_size.tex", fmt="{:.2f}")
+
+    # RAG: recall overall vs over the items retrieval actually returned
+    rag = sets[sets.setting == "rag"]
+    if len(rag):
+        rt = rag.groupby("Model").agg(**{"Recall": ("recall", "mean"),
+                                         "Recall over retrieved": ("recall_in_context", "mean")}).reindex(ov.index)
+        tex_table(rt, OUT / "rag.tex")
+
     # Where in the table are misses? Position of every gold row, and whether it was missed.
     qmap = {q.id: q for q in bench.questions}
     pos_rows = []
@@ -154,7 +183,7 @@ def main() -> None:
         t.columns = [c.capitalize() for c in t.columns]
         tex_table(t, OUT / "variants.tex", fmt="{:.3f}")
         (OUT / "variants_n.tex").write_text(f"{len(shared)}\n")
-    ag = repeat_agreement(all_df)
+    ag = repeat_agreement(all_df[all_df.error.isna()])  # API errors (usage caps) are not answers
     if not ag.empty:
         ag.index = ag.index.map(lambda m: SHORT.get(m, m))
         ag = ag.rename(columns={"n": "Questions", "exact_agreement": "Same exact verdict",
@@ -165,6 +194,7 @@ def main() -> None:
 
     # Usage: every call made, including retries and all experiments
     u = load_usage(args.results)
+    u = u[u.model.isin(SHORT)]
     ut = usage_table(u).reset_index()
     ut = ut[ut.model != "TOTAL"]
     ut["Model"] = ut.model.map(SHORT).fillna(ut.model)
