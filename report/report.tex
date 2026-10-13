@@ -8,6 +8,7 @@
 \usepackage{xcolor}
 \usepackage{enumitem}
 \usepackage{placeins}
+\usepackage[skins]{tcolorbox}
 \usepackage[font=small,labelfont=bf]{caption}
 \usepackage[colorlinks=true,linkcolor=black,urlcolor=blue!50!black]{hyperref}
 \setlist{itemsep=2pt,topsep=4pt,leftmargin=*}
@@ -26,9 +27,11 @@
 We report results for five language models on a 500-question benchmark that asks for \emph{every} item
 satisfying a condition, over records whose exact answers are obtained by executing SQL. On the \nctx{}
 questions whose records are in the prompt, mean recall is \recallmin--\recallmax, but only \exactmin--\exactmax\%
-of answers are exactly the correct set, and nearly all errors are omitted items. For three models the chance of a
-complete answer falls significantly as the number of correct items grows. Alternative prompts did not improve
-completeness. Models that stayed complete used far more reasoning tokens on larger answer sets.
+of answers are exactly the correct set; for four of the five models nearly all errors are omitted items. The
+chance of a complete answer falls both as the number of correct items grows and as the table grows (pooled odds
+ratios of \orpooledanswer{} and \orpooledtable{} per doubling, each adjusted for the other and for input format).
+Alternative prompts did not improve completeness, and models that stayed complete used far more reasoning tokens
+on larger answer sets.
 \end{abstract}
 
 \section{Process}
@@ -37,8 +40,11 @@ about fictional entities, so answers cannot come from memory. Each question is g
 defines it, and its gold answer is that query's result in SQLite. The 400 \emph{in-context} questions put all
 records in the prompt; 60 \emph{memory-only} questions filter fixed lists (U.S.\ states, chemical elements,
 presidents' surnames); 40 \emph{retrieval} questions supply the top-$k$ BM25 results. For in-context enumeration,
-exactly $g\in\{5,10,20,50,100\}$ of $n\in\{50,200,500,1000\}$ rows match, so answer size and table size vary
-independently. Table~\ref{tab:composition} lists the slices.
+exactly $g\in\{5,10,20,50,100\}$ of $n\in\{50,200,500,1000\}$ rows match. Answer size and table size vary
+largely independently, but answers of 50 or more items never occur in 50-row tables (correlation of the log sizes
+\sizecorr), so trends are estimated with both sizes and the input format in one model. Records are shown as
+Markdown, CSV, JSON Lines or English sentences, rotating across questions. Table~\ref{tab:composition} lists the
+slices.
 
 \paragraph{Models.} DeepSeek V4 Pro and V4 Flash (OpenCode Go API), Claude Haiku 5.5 (Claude Code CLI
 \claudecli, no tools) and MiMo-V2.6 Pro and Flash (OpenRouter), each with its default reasoning, temperature~0
@@ -48,7 +54,9 @@ where supported, and a 32{,}768-token output limit. Answers are returned as JSON
 and \textbf{exact-set accuracy} $\mathbb{1}[P=G]$, the primary measure. Each error is classified as
 \emph{missing}, \emph{near-miss} (a garbled copy of a missing item), \emph{wrong} (in the data but not
 qualifying), \emph{made-up} (not in the data) or \emph{duplicate}. An answer \emph{omits} if it misses a correct
-item and \emph{commits} if it adds an incorrect one.
+item and \emph{commits} if it adds an incorrect one. Answers that were truncated at the output limit, could not be
+parsed, or were refused by a safety filter are \emph{invalid}: they count as incorrect for exact-set accuracy but
+are excluded from error-type counts, so a cut-off answer is not mistaken for omitted items.
 
 \paragraph{Runs and statistics.} \textbf{E1}: all 500 questions, direct prompt. \textbf{E2}: a stratified
 100-question subset with a ``be exhaustive'' prompt and a ``check every record first'' prompt. \textbf{E3}: the
@@ -91,20 +99,34 @@ item (E1).}
 \end{figure}
 
 Errors are almost all omissions (Figure~\ref{fig:errors}; counts in Table~\ref{tab:errors}). Four models together
-returned \otherswrong{} wrong items and \othersmadeup{} made-up items across all their answers. MiMo-V2.6 Flash
-is the exception: it returned \flashmadeup{} made-up items, \flashworstmade{} of them on a single
-\flashworstgold-item question.
+returned \otherswrong{} wrong items and \othersmadeup{} made-up items across all their answers. Incomplete answers
+usually miss only a few items (median \medianmissed; \smallmissshare\% miss at most a tenth of the answer), which is
+why recall stays high. MiMo-V2.6 Flash is the exception: it returned \flashmadeup{} made-up items,
+\flashworstmade{} of them on a single \flashworstgold-item question. Box~1 shows one example of each. Across all
+models, \ninvalid{} of the 2{,}500 E1 answers were invalid, including \nrefused{} refused by a safety filter
+(Table~\ref{tab:invalid}).
+
+\begin{figure}[!htbp]
+\begin{tcolorbox}[colback=gray!4,colframe=gray!45,boxrule=0.5pt,arc=1.5pt,left=6pt,right=6pt,top=4pt,bottom=4pt,
+  fontupper=\small,title={\small Box 1. Two failures from E1},coltitle=black,colbacktitle=gray!15]
+\input{generated/examples.tex}
+\end{tcolorbox}
+\end{figure}
 \takeaway{high recall does not mean complete answers; models leave correct items out far more often than they add
 wrong ones, so incompleteness is not visible in what they list.}
 
 \FloatBarrier
-\subsection{Completeness and answer size}
+\subsection{Completeness, answer size and table size}
 On in-context enumeration (Figure~\ref{fig:size}, Table~\ref{tab:trend}), every model is complete on at least
 93\% of questions with up to 10 correct items. With 50 or more, Claude Haiku 5.5 falls to \largeHaiku\%,
-MiMo-V2.6 Pro to \largeMiMoPro\% and MiMo-V2.6 Flash to \largeMiMoFlash\%. The decline is significant for DeepSeek
-V4 Pro, Claude Haiku 5.5 and MiMo-V2.6 Flash, whose odds of a complete answer fall to 0.31--0.41$\times$ per
-doubling of the answer set. DeepSeek V4 Flash fails too rarely to show a trend.
-\takeaway{the more items a correct answer contains, the less likely it is to be complete.}
+MiMo-V2.6 Pro to \largeMiMoPro\% and MiMo-V2.6 Flash to \largeMiMoFlash\%. Because large answer sets occur only in
+larger tables, Table~\ref{tab:trend} estimates both effects together, adjusted for input format. Pooled across
+models, each doubling of the answer set multiplies the odds of a complete answer by \orpooledanswer{}
+(95\% CI \orpooledanswerci), and each doubling of the table by \orpooledtable{} (\orpooledtableci): both
+factors matter on their own. Per model, the answer-size effect is significant for Claude Haiku 5.5 and MiMo-V2.6
+Flash, and the table-size effect for Claude Haiku 5.5 and both MiMo models. The DeepSeek models fail too rarely
+(4 and 2 of 100 questions) for either effect to be estimated.
+\takeaway{larger answers and larger tables each make a complete answer less likely.}
 
 \begin{figure}[!htbp]
 \centering
@@ -116,18 +138,22 @@ with 95\% Wilson intervals.}
 
 \begin{table}[!htbp]
 \centering\small
-\input{generated/trend.tex}
-\caption{In-context enumeration (E1): exact-set accuracy for small and large answer sets, and the odds ratio of a
-complete answer per doubling of the number of correct items (below 1 means degradation).}
+\resizebox{\linewidth}{!}{\input{generated/trend.tex}}
+\caption{In-context enumeration (E1, 100 questions per model). Exact-set accuracy for small and large answer
+sets, and odds ratios of a complete answer per doubling of answer size and of table size, from one logistic
+regression that also adjusts for input format (below 1 means degradation). Pooled row: model fixed effects,
+bootstrap resampling whole questions. n.e.: not estimable (fewer than 5 failures).}
 \label{tab:trend}
 \end{table}
 
 \FloatBarrier
-\subsection{By operation}
+\subsection{By operation and input format}
 Every operation except set operations produced incomplete answers from at least three models
 (Table~\ref{tab:operation}). Enumeration, which has the largest answer sets, is hardest; set operations are
-solved almost perfectly.
-\takeaway{the effect is not specific to one operation.}
+solved almost perfectly. Input format matters for some models (Table~\ref{tab:format}): MiMo-V2.6 Flash is
+complete on 73\% of questions given as English sentences against 86\% as JSON Lines, and Claude Haiku 5.5 on
+88\% of Markdown or sentence inputs against 96\% for JSON Lines. The DeepSeek models are unaffected.
+\takeaway{the effect is not specific to one operation; format effects are smaller and model-specific.}
 
 \begin{table}[!htbp]
 \centering\small
@@ -135,6 +161,14 @@ solved almost perfectly.
 \caption{Exact-set accuracy (\%) by operation, in-context set-valued questions (E1). Aggregation here is GROUP BY;
 scalar aggregates are in Table~\ref{tab:scalar}.}
 \label{tab:operation}
+\end{table}
+
+\begin{table}[!htbp]
+\centering\small
+\resizebox{\linewidth}{!}{\input{generated/by_format.tex}}
+\caption{Exact-set accuracy (\%) by input format, in-context set-valued questions (E1). Formats rotate across
+questions, so cells contain different questions.}
+\label{tab:format}
 \end{table}
 
 \FloatBarrier
@@ -167,11 +201,12 @@ exact. Of the other models' 11 errors, 9 were undercounts.
 
 \FloatBarrier
 \subsection{Consistency across runs}
-Two independent samples of the subset agreed on 87--100\% of verdicts (Table~\ref{tab:repeats}). Of 13 failures
-re-run three times each (Table~\ref{tab:cases}), some recurred every time: Claude Haiku 5.5's missing U.S.\
-states, and DeepSeek V4 Pro's and MiMo-V2.6 Flash's misses on the same 50-item list. When MiMo-V2.6 Pro failed
-on that list it omitted the same three employees each time. Others, including Claude Haiku 5.5's misses on
-selection, JOIN, projection and COUNT questions, never recurred.
+Two independent samples of the subset agreed on 87--100\% of verdicts (Table~\ref{tab:repeats}). We also re-ran
+13 failures, chosen by hand to cover models and operations, three times each (Table~\ref{tab:cases}). Some
+recurred every time: Claude Haiku 5.5 was incomplete on the same memory-only question (U.S.\ states containing
+``in'') in all three re-runs, omitting Maine every time, and DeepSeek V4 Pro and MiMo-V2.6 Flash were incomplete on the same 50-item list in every re-run, though not always missing the
+same names (Box~1). In the two runs where MiMo-V2.6 Pro failed on that list, it omitted the same three employees.
+Others, including Claude Haiku 5.5's misses on selection, JOIN, projection and COUNT questions, never recurred.
 \takeaway{some failures are systematic, but many are run-to-run variation, so completeness is best reported as a
 rate over many questions.}
 
@@ -202,7 +237,7 @@ any model; every paired interval includes zero (Table~\ref{tab:prompting}).
 \centering\small
 \input{generated/prompting.tex}
 \caption{Paired change in exact-set accuracy (percentage points) from the direct prompt on the subset (E2), with
-95\% bootstrap intervals. DeepSeek V4 Pro's E2 runs did not finish within its provider's usage limits.}
+95\% bootstrap intervals. \etwonote}
 \label{tab:prompting}
 \end{table}
 
@@ -225,13 +260,15 @@ controlled result.}
 
 \FloatBarrier
 \subsection{Usage}
-Across all runs the five models made \totalcalls{} calls; \reasonshare\% of output tokens were reasoning
+Across all runs the five models answered \totalcalls{} calls; a further \failedcalls{} attempts failed, almost
+all on provider rate or usage limits, and were retried. \reasonshare\% of output tokens were reasoning
 (Table~\ref{tab:usage}).
 
 \begin{table}[!htbp]
-\centering\footnotesize\setlength{\tabcolsep}{4pt}
+\centering\footnotesize\setlength{\tabcolsep}{3.5pt}
 \input{generated/usage.tex}
-\caption{Usage across all experiments, including retried calls. Input and output in millions of tokens;
+\caption{Usage across all experiments. \emph{Calls}: answered calls; \emph{Failed}: attempts that returned an
+error and were retried. Input and output in millions of tokens;
 \emph{Reasoning}: share of output tokens; cost at provider list prices (Claude Haiku 5.5 and the OpenCode Go
 models were used through subscriptions); latency is the median per call.}
 \label{tab:usage}
@@ -243,11 +280,15 @@ models were used through subscriptions); latency is the median per call.}
 \item Mean recall of \recallmin--\recallmax{} corresponds to exact-set accuracy of only \exactmin--\exactmax\%;
 \omitmin--\omitmax\% of in-context answers omit at least one correct item.
 \item Errors are omissions, not additions, for four of five models; one model fabricates items on long lists.
-\item Completeness falls with answer size, significantly for three models.
+\item Completeness falls as answer sets grow and, independently, as tables grow (pooled odds ratios
+\orpooledanswer{} and \orpooledtable{} per doubling).
 \item Prompt variants do not help; complete models reason far longer on large answer sets.
+\item The DeepSeek models are complete on \exactDSFlash\% of in-context questions, so at this difficulty the
+benchmark leaves little headroom for the strongest models.
 \item Caveats: synthetic data from one seed; one sample per question in E1 (0--13\% of verdicts change on a second
-sample); the retrieval slice measures the retriever; DeepSeek V4 Pro lacks E2 results; a stopped Claude Haiku 4.5
-run (90 questions) is excluded.
+sample); the answer-size trend rests on 100 enumeration questions per model; the retrieval slice measures the
+retriever; failure cases were chosen by hand; \etwonote{} A stopped Claude Haiku 4.5 run (90 questions) is
+excluded.
 \end{itemize}
 \noindent Code, data, raw responses and run manifests:\\
 \url{https://github.com/daryl-888/llm-relational-completeness}.\\
@@ -261,8 +302,18 @@ Statistics follow E.~Miller, ``Adding Error Bars to Evals'' (2024), \url{https:/
 \begin{table}[!htbp]
 \centering\small
 \input{generated/error_counts.tex}
-\caption{Error counts by type on in-context set-valued questions (E1).}
+\caption{Error counts by type on in-context set-valued questions (E1), counted on valid answers only; the last
+column is the number of invalid answers excluded.}
 \label{tab:errors}
+\end{table}
+
+\begin{table}[!htbp]
+\centering\small
+\input{generated/invalid.tex}
+\caption{Invalid answers among all 500 E1 questions: cut off at the 32{,}768-token output limit, not parseable as
+an answer, or refused by a safety filter (Claude Haiku 5.5: listing the elements with atomic numbers 55--86;
+MiMo-V2.6 Pro: one enumeration question stopped by the provider's content filter).}
+\label{tab:invalid}
 \end{table}
 
 \begin{figure}[!htbp]

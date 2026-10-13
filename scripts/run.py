@@ -43,8 +43,10 @@ def finished(rec: dict, max_tokens: int) -> bool:
     # same limit would only return the cached response. It is redone only if the limit has since been raised.
     if rec.get("finish_reason") in ("length", "max_tokens"):
         return (rec.get("params") or {}).get("max_tokens", 8192) >= max_tokens
+    if rec.get("blocked") or is_blocked(rec.get("error"), rec.get("finish_reason")):
+        return True  # a refusal is recorded, not retried
     if rec.get("text") is None:
-        return bool(rec.get("blocked") or is_blocked(rec.get("error")))  # a refusal is recorded, not retried
+        return False
     return True
 
 

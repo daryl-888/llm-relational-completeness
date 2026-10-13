@@ -1,17 +1,12 @@
 # Findings
 
-*No model results yet. Fill this in after running `scripts/run.py` and `scripts/analyze.py`.*
+The results are in [report/report.pdf](../report/report.pdf), generated from `results/full_v0/` by
+`report/make_assets.py`. The advisor-facing summary, covering each deliverable in the brief, related work and the
+feasibility verdict, is in [report/memo.pdf](../report/memo.pdf).
 
-## Proof of concept
-- Recall versus answer-set size (enumeration in context): `figures/enumeration_curves.png`
-- 5–10 failure cases that reproduce reliably (question ID, model, what was missed)
-
-## Does it generalize?
-- Recall by operation: `figures/recall_by_slice.png`
-- Error types: `figures/error_types.png`
-
-## Does prompting fix it?
-- `figures/prompt_variants.png`
-
-## Feasibility verdict
-Is the failure robust, does it hold across operations, and is it distinct from the closest prior work?
+In short, on 365 in-context questions:
+- Mean recall is 0.966–0.996, but only 81–98% of answers are exactly the correct set.
+- Four of the five models almost only omit items; MiMo-V2.6 Flash also invents them on long lists.
+- Completeness falls as answer sets grow and, separately, as tables grow.
+- Prompting the model to be exhaustive, or to check each record, does not help.
+- Some failures repeat on every run; many are run-to-run variation.

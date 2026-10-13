@@ -1,0 +1,101 @@
+\documentclass[10pt]{article}
+\usepackage[margin=0.9in]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage{microtype}
+\usepackage{booktabs,array,tabularx}
+\usepackage{enumitem}
+\usepackage{xcolor}
+\usepackage[colorlinks=true,linkcolor=black,urlcolor=blue!50!black]{hyperref}
+\setlist{itemsep=1pt,topsep=3pt,leftmargin=*}
+\setlength{\parskip}{4pt}
+\setlength{\parindent}{0pt}
+\input{generated/numbers.tex}
+\pagestyle{empty}
+
+\begin{document}
+{\Large\textbf{Memo: Completeness of relational operations in LLMs}}\par
+\vspace{2pt}
+\textbf{From:} Daryl Alfaro \quad \textbf{Date:} \today \quad
+\textbf{Re:} preliminary exploration (deliverables from the research brief)\par
+\vspace{-2pt}\rule{\linewidth}{0.4pt}
+
+\textbf{Summary.} The phenomenon is real and measurable. On \nctx{} questions whose records were all in the
+prompt, five models had mean recall of \recallmin--\recallmax, yet only \exactmin--\exactmax\% of their answers
+were exactly the correct set. The errors are omissions, not hallucinations, for four of the five models.
+Completeness falls as answer sets and tables grow, and prompting does not fix it. The two DeepSeek models are near
+ceiling at the current difficulty, so a full benchmark needs harder tiers. The attached results paper has the
+details, and the code, data and every raw response are at
+\url{https://github.com/daryl-888/llm-relational-completeness}.
+
+\textbf{Deliverables against the brief}
+
+\begin{tabularx}{\linewidth}{@{}>{\raggedright\arraybackslash}p{3.1cm}>{\raggedright\arraybackslash}X@{}}
+\toprule
+Brief asked for & Status \\
+\midrule
+Related work & Done; summary below, about 20 papers in \texttt{docs/related\_work.md}. \\
+Proof of concept & Done. Reproducible failures with known ground truth. For example, DeepSeek V4 Pro was incomplete
+on the same 50-item list in all four runs, and Claude Haiku 5.5 left Maine out of ``U.S.\ states containing `in'\,''
+in all four runs (paper, Box~1 and the failure-case table). \\
+Preliminary generalization & Done, and broader than asked. Selection, JOIN and aggregation, plus projection, nested
+queries and set operations. Every operation except set operations produces incomplete answers for at least three
+models. Wrong totals on COUNT/SUM questions are mostly undercounts (\scalarunder{} of \scalarerrors). \\
+Benchmark proposal & Built and run rather than only proposed: 500 questions, a task taxonomy of 7 operations
+$\times$ 3 settings, SQL-derived ground truth, and the metrics exact-set accuracy, recall/precision and a
+missing/near-miss/wrong/made-up/duplicate error taxonomy. \\
+Feasibility assessment & Below. \\
+\bottomrule
+\end{tabularx}
+
+\textbf{Closest prior work.} \emph{HoloBench} (Maekawa et al., ICLR 2025) is closest. It writes out database rows
+as long text and evaluates five query types while varying context length and information density, but it scores
+with a model-based judge and partial credit, and does not control the number of correct items. \emph{Oolong}
+(Bertsch et al., 2025) covers long-context aggregation with scalar answers. \emph{LongProc} (2025) scores
+HTML-to-TSV extraction by row-level F1, with no selection conditions. \emph{LOFT} (Lee et al., 2024) finds
+SQL-like compositional reasoning hard for long-context models. Multi-answer QA (QAMPARI, RoMQA, QUEST) mixes up
+retrieval, knowledge and reading failures. \emph{Galois} (Saeed et al., EDBT 2024) queries a model's memory with
+SQL. What is new here:
+\begin{enumerate}
+\item answer-set size is a controlled variable;
+\item ground truth comes from executing SQL, with a set-level error taxonomy and no LLM judge;
+\item one framework covers seven operations;
+\item it reports the reasoning cost of completeness.
+\end{enumerate}
+\textbf{Novelty risk: medium.} HoloBench is the baseline to compare against directly.
+
+\textbf{Feasibility verdict: proceed, with changes.}
+\begin{itemize}
+\item \emph{Robust?} Yes, as a rate. Two independent samples agree on 87--100\% of verdicts, and model
+differences are statistically clear: three models trail the best by 7--17 points, with intervals excluding zero.
+Individual failures sometimes recur and sometimes don't, so results should be reported over many questions and
+several samples.
+\item \emph{Generalizable?} Across operations, mostly yes. Across access paths, partly: the memory-only slice
+shows the same omissions, but the retrieval slice as built measures only the retriever.
+\item \emph{Distinct from existing work?} Yes on answer-size control and set-level error types; that distinction
+should be shown empirically against HoloBench.
+\item \emph{Headroom?} Limited for the strongest models: the DeepSeek models are exact on \exactDSFlash\% of
+in-context questions. MiMo-V2.6 Flash, the weakest, is exact on only \largeMiMoFlash\% of questions with 50 or
+more correct items.
+\end{itemize}
+
+\textbf{Recommended changes for a full benchmark}
+\begin{enumerate}
+\item \textbf{Harder tiers:} answer sets of 200--1{,}000 items and tables of 5k--20k rows, to restore headroom.
+\item \textbf{A fully crossed design} of answer size $\times$ table size $\times$ format. These are partly
+confounded today (large answers only appear in large tables) and are currently separated by regression.
+\item \textbf{Control reasoning:} a reasoning-off condition and fixed reasoning budgets, to test whether the
+reasoning--completeness link is causal.
+\item \textbf{Redesign the retrieval slice} with queries where the retriever's top results include near-miss
+distractors.
+\item \textbf{More rigour:} at least 3 samples per question, more questions per cell (the main trend rests on 100
+questions per model), a real-data slice, and frontier models.
+\end{enumerate}
+
+\textbf{Questions for you.}
+\begin{enumerate}
+\item Should the next step target a paper (with a direct HoloBench comparison), or first a larger benchmark?
+\item Which models should be in scope, and is there a compute or API budget for frontier models?
+\end{enumerate}
+
+\end{document}

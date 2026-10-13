@@ -1,5 +1,15 @@
 # Benchmark proposal: completeness-sensitive relational operations
 
+> **Status (2026-10-13):** this is the original proposal from 2026-10-11, kept for reference. What was actually
+> run differs in a few ways:
+> - **Models:** DeepSeek V4 Pro and Flash (OpenCode Go), Claude Haiku 5.5 (Claude Code CLI), and MiMo-V2.6 Pro
+>   and Flash (OpenRouter), not the four listed under "Experiments".
+> - **Repeat runs:** a second sample of the subset (E3) was added.
+> - **Analysis:** adjusts for table size and input format.
+>
+> See [the results paper](../report/report.pdf) and [the cover memo](../report/memo.pdf).
+
+
 ## Question
 When the information needed is available (in the model's training data, in the prompt, or in retrieved
 documents), does an LLM return *all* the items that satisfy a request, and nothing else? The main claim to test:

@@ -33,8 +33,26 @@ def load_results(results_dir: Path, bench: Benchmark) -> pd.DataFrame:
                          "n_gold": q.meta["n_gold"], "n_rows": q.meta["n_rows"],
                          "difficulty": q.meta["difficulty"], "error": r.get("error"),
                          "finish_reason": r.get("finish_reason"), "cached": r.get("cached", False),
-                         **normalise(r), **score(q, bench, r.get("text"))})  # re-scored with the current scorer
+                         "outcome": outcome(r), **normalise(r),
+                         **score(q, bench, r.get("text"))})  # re-scored with the current scorer
     return pd.DataFrame(recs)
+
+
+def outcome(r: dict) -> str:
+    """What happened to a call, before looking at answer quality.
+
+    answered | truncated (hit the token limit) | refused (safety filter) | api_error | unparseable is decided
+    later from the score, since it depends on the parser. Only "answered" answers count towards error types.
+    """
+    from .models import is_blocked
+
+    if is_blocked(r.get("error"), r.get("finish_reason")) or r.get("blocked"):
+        return "refused"
+    if r.get("finish_reason") in ("length", "max_tokens"):
+        return "truncated"
+    if r.get("text") is None:
+        return "api_error"
+    return "answered"
 
 
 def slice_name(df: pd.DataFrame) -> pd.Series:

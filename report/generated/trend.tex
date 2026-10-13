@@ -1,11 +1,13 @@
-\begin{tabular}{lrrr}
+\begin{tabular}{lrrrrr}
 \toprule
-Model & $\leq$10 items (\%) & $\geq$50 items (\%) & Odds ratio per doubling [95\% CI] \\
+Model & $\leq$10 items (\%) & $\geq$50 items (\%) & Failures & OR: answer size [95\% CI] & OR: table size [95\% CI] \\
 \midrule
-DeepSeek V4 Pro & 100 & 88 & 0.31 [0.05, 0.54] \\
-DeepSeek V4 Flash & 98 & 97 & not estimable (2 failures) \\
-Claude Haiku 5.5 & 100 & 53 & 0.32 [0.17, 0.45] \\
-MiMo-V2.6 Pro & 93 & 75 & 0.74 [0.51, 1.05] \\
-MiMo-V2.6 Flash & 93 & 34 & 0.41 [0.26, 0.55] \\
+DeepSeek V4 Pro & 100 & 88 & 4 & n.e. & n.e. \\
+DeepSeek V4 Flash & 98 & 97 & 2 & n.e. & n.e. \\
+Claude Haiku 5.5 & 100 & 53 & 17 & 0.17 [0.02, 0.28] & 0.07 [0.01, 0.17] \\
+MiMo-V2.6 Pro & 93 & 75 & 16 & 0.79 [0.44, 1.20] & 0.44 [0.11, 0.76] \\
+MiMo-V2.6 Flash & 93 & 34 & 34 & 0.33 [0.15, 0.44] & 0.29 [0.08, 0.45] \\
+\midrule
+\textit{All models (pooled)} & 97 & 69 & 73 & 0.50 [0.36, 0.60] & 0.39 [0.22, 0.56] \\
 \bottomrule
 \end{tabular}

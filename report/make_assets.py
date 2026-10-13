@@ -2,10 +2,16 @@
 
   .venv/bin/python report/make_assets.py [--results results/full_v0]
 
-Writes report/generated/*.tex (tables, and numbers.tex with \\newcommand macros used in the text) and
-report/generated/*.pdf (figures). Statistics follow Miller (2024), "Adding Error Bars to Evals": 95% Wilson
-intervals for proportions, question-level bootstrap intervals for means, and paired question-level
-differences when comparing prompts or models on the same questions.
+Writes report/generated/*.tex (tables, examples, and numbers.tex with \\newcommand macros used in the text)
+and report/generated/*.pdf (figures). Statistics (relcomplete.stats) follow Miller (2024), "Adding Error Bars
+to Evals": Wilson intervals for proportions, question-level bootstrap for means and paired differences, and
+cluster bootstraps when a question contributes several rows.
+
+Conventions:
+  * Every answer has an outcome: answered, truncated (token limit), refused (safety filter), api_error, or
+    unparseable. Exact-set accuracy counts every non-answer as incorrect; error types (missing, wrong, ...)
+    are counted only on valid answers, so a truncated answer is not mistaken for omitted items.
+  * E1 = repeat 0, direct prompt. E2 = exhaustive / rowwise prompts on the subset. E3 = repeat 1.
 """
 import argparse
 import json
@@ -18,22 +24,27 @@ import matplotlib.pyplot as plt  # noqa: E402
 import numpy as np  # noqa: E402
 import pandas as pd  # noqa: E402
 
-from relcomplete.report import load_results, load_usage, usage_table  # noqa: E402
+from relcomplete.report import load_results, load_usage  # noqa: E402
 from relcomplete.schema import Benchmark  # noqa: E402
-from relcomplete.score import norm  # noqa: E402
+from relcomplete.score import norm, score  # noqa: E402
+from relcomplete.stats import boot_mean, logit, logit_boot, wilson  # noqa: E402
+from relcomplete.synth import ENTITY  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / "report" / "generated"
 RNG = np.random.default_rng(0)
-B = 2000  # bootstrap resamples
 
-# Models in the paper. MiMo was run to completion on OpenRouter; its partial OpenCode Go runs and the stopped
-# Haiku 4.5 run (90 questions) are excluded.
+# Models in the paper and the result files that represent them. MiMo was run to completion on OpenRouter; its
+# partial OpenCode Go runs and the stopped Haiku 4.5 run (90 questions) are excluded. ALSO maps a model's runs
+# on a second provider onto the same row; those runs only contribute to E2 (see results/full_v0/README.md).
 SHORT = {"opencode-go/deepseek-v4-pro": "DeepSeek V4 Pro", "opencode-go/deepseek-v4-flash": "DeepSeek V4 Flash",
          "claude-cli/claude-haiku-5-5": "Claude Haiku 5.5", "xiaomi/mimo-v2.6-pro": "MiMo-V2.6 Pro",
          "xiaomi/mimo-v2.6-flash": "MiMo-V2.6 Flash"}
+ALSO = {"openrouter/deepseek/deepseek-v4-pro": "DeepSeek V4 Pro"}
 ORDER = list(SHORT.values())
 KEY = dict(zip(ORDER, ["DSPro", "DSFlash", "Haiku", "MiMoPro", "MiMoFlash"]))  # letters only, for \macros
+ACCESS = {"DeepSeek V4 Pro": "OpenCode Go", "DeepSeek V4 Flash": "OpenCode Go", "Claude Haiku 5.5": "Claude Code CLI",
+          "MiMo-V2.6 Pro": "OpenRouter", "MiMo-V2.6 Flash": "OpenRouter"}
 # Validated categorical order from the dataviz reference palette (slots 1-5), plus a marker per model so
 # identity never depends on colour alone (print, colour-vision deficiency).
 COLOR = dict(zip(ORDER, ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4"]))
@@ -42,7 +53,7 @@ INK, INK2, GRID = "#0b0b0b", "#52514e", "#e6e5e0"
 OPS = [("enumeration", "Enumeration"), ("selection", "Selection"), ("projection", "Projection"),
        ("join", "JOIN"), ("aggregation", "Aggregation"), ("nested", "Nested query"),
        ("setop", "Set operation")]
-
+FMTS = [("markdown", "Markdown"), ("csv", "CSV"), ("json", "JSON Lines"), ("nl", "English sentences")]
 VARIANTS = {("enumeration", "context"): "one category filter",
             ("enumeration", "parametric"): "U.S. states, elements, presidents",
             ("enumeration", "rag"): "BM25 top-$k$, $k\\in\\{10,20,50\\}$",
@@ -59,40 +70,11 @@ plt.rcParams.update({
     "axes.grid": True, "grid.color": GRID, "grid.linewidth": 0.6, "legend.frameon": False,
     "lines.linewidth": 1.6, "lines.markersize": 4.5, "savefig.bbox": "tight", "pdf.fonttype": 42})
 
-
-# ----------------------------------------------------------------------------- statistics
-
-def wilson(k: float, n: int, z: float = 1.96) -> tuple[float, float]:
-    if n == 0:
-        return (np.nan, np.nan)
-    p = k / n
-    d = 1 + z * z / n
-    c = (p + z * z / (2 * n)) / d
-    h = z * np.sqrt(p * (1 - p) / n + z * z / (4 * n * n)) / d
-    return (c - h, c + h)
+MACROS: dict[str, str] = {}
 
 
-def boot_mean(x) -> tuple[float, float]:
-    x = np.asarray(x, float)
-    if len(x) == 0:
-        return (np.nan, np.nan)
-    m = x[RNG.integers(0, len(x), (B, len(x)))].mean(1)
-    return tuple(np.percentile(m, [2.5, 97.5]))
-
-
-def logit_slope(x, y) -> float:
-    """Slope of a one-predictor logistic regression (Newton steps, tiny ridge for separable data)."""
-    X = np.column_stack([np.ones(len(x)), x])
-    w = np.zeros(2)
-    for _ in range(50):
-        p = 1 / (1 + np.exp(-X @ w))
-        g = X.T @ (y - p) - 1e-3 * w
-        H = X.T @ (X * (p * (1 - p))[:, None]) + 1e-3 * np.eye(2)
-        step = np.linalg.solve(H, g)
-        w += step
-        if np.abs(step).max() < 1e-8:
-            break
-    return w[1]
+def macro(name: str, value) -> None:
+    MACROS[name] = str(value)
 
 
 def pct(v: float, d: int = 0) -> str:
@@ -103,7 +85,16 @@ def ci_pct(lo: float, hi: float, d: int = 0) -> str:
     return f"[{pct(lo, d)}, {pct(hi, d)}]"
 
 
-# ----------------------------------------------------------------------------- output helpers
+def tex_escape(s: str) -> str:
+    return (str(s).replace("\\", r"\textbackslash{}").replace("&", r"\&").replace("%", r"\%")
+            .replace("_", r"\_").replace("#", r"\#").replace("$", r"\$"))
+
+
+def title_case(s: str) -> str:
+    small = {"of", "the", "a", "an", "and", "in", "on"}
+    words = s.split()
+    return " ".join(w if (i and w in small) else w[:1].upper() + w[1:] for i, w in enumerate(words))
+
 
 def write_table(path: Path, header: list[str], rows: list[list[str]], spec: str, midrules: tuple = ()) -> None:
     lines = [rf"\begin{{tabular}}{{{spec}}}", r"\toprule", " & ".join(header) + r" \\", r"\midrule"]
@@ -115,18 +106,13 @@ def write_table(path: Path, header: list[str], rows: list[list[str]], spec: str,
     path.write_text("\n".join(lines) + "\n")
 
 
-MACROS: dict[str, str] = {}
+def or_cell(coefs: np.ndarray, boots: np.ndarray, j: int, failures: int) -> str:
+    """Odds ratio per doubling with a bootstrap interval, or n.e. (not estimable) when failures are too few."""
+    lo, hi = np.percentile(boots[:, j], [2.5, 97.5])
+    if failures < 5 or np.exp(hi) > 20:
+        return "n.e."
+    return f"{np.exp(coefs[j]):.2f} [{np.exp(lo):.2f}, {np.exp(hi):.2f}]"
 
-
-def macro(name: str, value) -> None:
-    MACROS[name] = str(value)
-
-
-def legend_handles(ax):
-    ax.legend(loc="lower left", fontsize=7, handlelength=1.6, borderaxespad=0.2)
-
-
-# ----------------------------------------------------------------------------- main
 
 def main() -> None:
     ap = argparse.ArgumentParser()
@@ -138,14 +124,15 @@ def main() -> None:
     qmap = {q.id: q for q in bench.questions}
 
     df = load_results(args.results, bench)
-    df = df[df.model.isin(SHORT)].copy()
-    df["Model"] = df.model.map(SHORT)
+    df["Model"] = df.model.map({**SHORT, **ALSO})
+    df = df[df.Model.notna()].copy()
     df["exact"] = df.exact.astype(bool)
-    df["api_error"] = df.error.notna() & ~df.error.fillna("").str.contains("content filtering")
-    e1 = df[(df.repeat == 0) & (df.variant == "direct")]
+    df["state"] = np.where((df.outcome == "answered") & ~df.parse_ok.astype(bool), "unparseable", df.outcome)
+    df["valid"] = df.state == "answered"
+    e1 = df[(df.repeat == 0) & (df.variant == "direct") & df.model.isin(SHORT)]
     ctx = e1[(e1.setting == "context") & (e1.answer_type != "scalar")].copy()  # the core: 365 questions
-    ctx["omission"] = ctx.missing.fillna(0) + ctx.near_miss.fillna(0) > 0
-    ctx["commission"] = ctx.wrong.fillna(0) + ctx.made_up.fillna(0) + ctx.duplicates.fillna(0) > 0
+    ctx["omission"] = ctx.valid & (ctx.missing.fillna(0) + ctx.near_miss.fillna(0) > 0)
+    ctx["commission"] = ctx.valid & (ctx.wrong.fillna(0) + ctx.made_up.fillna(0) + ctx.duplicates.fillna(0) > 0)
     macro("nctx", ctx.groupby("Model").size().iloc[0])
 
     # ---- Benchmark composition
@@ -157,63 +144,79 @@ def main() -> None:
                 continue
             g = [q.meta["n_gold"] for q in qs]
             comp.append([label + ("" if setting == "context" else f" ({slabel})"), str(len(qs)),
-                         VARIANTS[(op, setting)],
-                         f"{min(g)}--{max(g)}", f"{np.median([q.meta['context_chars'] for q in qs]) / 4000:.1f}"])
+                         VARIANTS[(op, setting)], f"{min(g)}--{max(g)}",
+                         f"{np.median([q.meta['context_chars'] for q in qs]) / 4000:.1f}"])
     write_table(OUT / "composition.tex", ["Slice", "Qs", "Variants", "Answer size", r"Context (k tok.)"],
                 comp, "lrlrr", midrules=(3,))
 
-    # ---- T: main results (in-context set questions), with CIs and paired difference from the best model
-    rows, stats = [], {}
+    # ---- Main results with intervals and paired difference from the best model
+    stats = {}
     for m in ORDER:
         g = ctx[ctx.Model == m]
         n, k = len(g), int(g.exact.sum())
-        lo, hi = wilson(k, n)
-        rlo, rhi = boot_mean(g.recall)
-        stats[m] = {"exact": k / n, "recall": g.recall.mean(), "precision": g.precision.mean(),
-                    "omit": g.omission.mean(), "commit": g.commission.mean(), "n": n}
-        stats[m].update(exact_ci=(lo, hi), recall_ci=(rlo, rhi))
+        stats[m] = {"exact": k / n, "exact_ci": wilson(k, n), "recall": g.recall.mean(),
+                    "recall_ci": boot_mean(g.recall, RNG), "precision": g[g.valid].precision.mean(),
+                    "omit": g.omission.mean(), "commit": g.commission.mean(), "n_invalid": int((~g.valid).sum())}
     best = max(ORDER, key=lambda m: stats[m]["exact"])
     piv = ctx.pivot_table(index="id", columns="Model", values="exact", aggfunc="first").astype(float)
+    rows = []
     for m in ORDER:
         s = stats[m]
         if m == best:
             diff = "(reference)"
         else:
-            d = (piv[m] - piv[best]).dropna().values
-            dlo, dhi = boot_mean(d)
-            diff = f"${100 * d.mean():+.1f}$ [{100 * dlo:+.1f}, {100 * dhi:+.1f}]"
+            dd = (piv[m] - piv[best]).dropna().values
+            lo, hi = boot_mean(dd, RNG)
+            diff = f"${100 * dd.mean():+.1f}$ [{100 * lo:+.1f}, {100 * hi:+.1f}]"
         rows.append([m, f"{pct(s['exact'])} {ci_pct(*s['exact_ci'])}", diff,
                      f"{s['recall']:.3f} [{s['recall_ci'][0]:.3f}, {s['recall_ci'][1]:.3f}]",
-                     f"{s['precision']:.3f}", pct(s["omit"]), pct(s["commit"])])
-        key = KEY[m]
-        macro(f"exact{key}", pct(s["exact"]))
-        macro(f"recall{key}", f"{s['recall']:.3f}")
-        macro(f"omit{key}", pct(s["omit"]))
+                     f"{s['precision']:.3f}", pct(s["omit"]), pct(s["commit"]), str(s["n_invalid"])])
+        macro(f"exact{KEY[m]}", pct(s["exact"]))
+        macro(f"recall{KEY[m]}", f"{s['recall']:.3f}")
+        macro(f"omit{KEY[m]}", pct(s["omit"]))
+        macro(f"commit{KEY[m]}", pct(s["commit"]))
     write_table(OUT / "main.tex", ["Model", r"Exact-set acc.\ (\%)", r"$\Delta$ vs.\ best (pp)", "Mean recall",
-                                   "Mean prec.", r"Omit.\ (\%)", r"Comm.\ (\%)"], rows, "lrrrrrr")
+                                   "Mean prec.", r"Omit.\ (\%)", r"Comm.\ (\%)", "Invalid"], rows, "lrrrrrrr")
     macro("bestmodel", best)
-    ex = [stats[m]["exact"] for m in ORDER]
-    rc = [stats[m]["recall"] for m in ORDER]
+    ex, rc, om = ([stats[m][k] for m in ORDER] for k in ("exact", "recall", "omit"))
     macro("exactmin", pct(min(ex)))
     macro("exactmax", pct(max(ex)))
     macro("recallmin", f"{min(rc):.3f}")
     macro("recallmax", f"{max(rc):.3f}")
-    om = [stats[m]["omit"] for m in ORDER]
     macro("omitmin", pct(min(om)))
     macro("omitmax", pct(max(om)))
-    errs = ctx.groupby("Model")[["missing", "near_miss", "wrong", "made_up", "duplicates"]].sum().reindex(ORDER)
-    errs = errs.astype(int)
-    write_table(OUT / "error_counts.tex", ["Model", "Missing", "Near-miss", "Wrong", "Made-up", "Duplicate"],
-                [[m] + [f"{v:,}" for v in errs.loc[m]] for m in ORDER], "lrrrrr")
+
+    # ---- Error counts by type, valid answers only
+    valid_ctx = ctx[ctx.valid]
+    errs = valid_ctx.groupby("Model")[["missing", "near_miss", "wrong", "made_up", "duplicates"]].sum()
+    errs = errs.reindex(ORDER).astype(int)
+    write_table(OUT / "error_counts.tex", ["Model", "Missing", "Near-miss", "Wrong", "Made-up", "Duplicate",
+                                           "Invalid answers"],
+                [[m] + [f"{v:,}" for v in errs.loc[m]] + [str(stats[m]["n_invalid"])] for m in ORDER], "lrrrrrr")
     others = errs.drop(index="MiMo-V2.6 Flash")
     macro("otherswrong", int(others.wrong.sum()))
     macro("othersmadeup", int(others.made_up.sum()))
     macro("flashmadeup", f"{int(errs.loc['MiMo-V2.6 Flash', 'made_up']):,}")
-    worst = ctx[ctx.Model == "MiMo-V2.6 Flash"].sort_values("made_up", ascending=False).iloc[0]
+    worst = valid_ctx[valid_ctx.Model == "MiMo-V2.6 Flash"].sort_values("made_up", ascending=False).iloc[0]
     macro("flashworstmade", f"{int(worst.made_up):,}")
     macro("flashworstgold", int(worst.n_gold))
+    inc = valid_ctx[valid_ctx.missing + valid_ctx.near_miss > 0]
+    macro("medianmissed", f"{inc.missing.median():.0f}")
+    macro("smallmissshare", pct(((inc.missing + inc.near_miss) / inc.n_gold <= 0.10).mean()))
 
-    # ---- F: error profile (share of answers with an omission / a commission)
+    # ---- Invalid answers (all 500 E1 questions)
+    irows = []
+    for m in ORDER:
+        g = e1[e1.Model == m]
+        c = g.state.value_counts()
+        irows.append([m, str(len(g)), str(c.get("truncated", 0)), str(c.get("unparseable", 0)),
+                      str(c.get("refused", 0)), str(c.get("api_error", 0))])
+    write_table(OUT / "invalid.tex", ["Model", "Qs", "Truncated", "Unparseable", "Refused", "API error"], irows,
+                "lrrrrr")
+    macro("ninvalid", int((e1.state != "answered").sum()))
+    macro("nrefused", int((e1.state == "refused").sum()))
+
+    # ---- Figure: error profile
     fig, ax = plt.subplots(figsize=(3.4, 2.2))
     y = np.arange(len(ORDER))
     for j, (col, lab, c) in enumerate([("omit", "Omits $\\geq$1 correct item", "#2a78d6"),
@@ -231,69 +234,85 @@ def main() -> None:
     fig.savefig(OUT / "error_profile.pdf")
     plt.close(fig)
 
-    # ---- F: completeness vs answer size and table size (in-context enumeration), with Wilson intervals
-    enum = ctx[ctx.op == "enumeration"]
+    # ---- Figure: completeness vs answer size and table size (in-context enumeration), Wilson intervals
+    enum = ctx[ctx.op == "enumeration"].copy()
     fig, axes = plt.subplots(1, 2, figsize=(6.8, 2.5), sharey=True)
     for ax, x, lab in zip(axes, ["n_gold", "n_rows"], ["Correct items in the answer", "Records in the table"]):
         xs = sorted(enum[x].unique())
         for i, m in enumerate(ORDER):
             g = enum[enum.Model == m]
-            pts = [(v, g[g[x] == v].exact.sum(), (g[x] == v).sum()) for v in xs]
-            p = [k / n for _, k, n in pts]
-            lo, hi = zip(*[wilson(k, n) for _, k, n in pts])
+            pts = [(g[g[x] == v].exact.sum(), (g[x] == v).sum()) for v in xs]
+            p = np.array([k / n for k, n in pts])
+            lo, hi = map(np.array, zip(*[wilson(k, n) for k, n in pts]))
             off = np.array(xs) * (1 + 0.035 * (i - 2))  # dodge on the log axis
-            ax.errorbar(off, 100 * np.array(p), yerr=[100 * (np.array(p) - lo), 100 * (np.array(hi) - p)],
-                        color=COLOR[m], marker=MARKER[m], capsize=0, elinewidth=0.8, label=m)
+            ax.errorbar(off, 100 * p, yerr=[100 * (p - lo), 100 * (hi - p)], color=COLOR[m], marker=MARKER[m],
+                        capsize=0, elinewidth=0.8, label=m)
         ax.set(xscale="log", xlabel=lab)
         ax.set_xticks(xs, [str(v) for v in xs])
         ax.minorticks_off()
     axes[0].set_ylabel("Exact-set accuracy (%)")
     axes[0].set_ylim(0, 104)
-    legend_handles(axes[0])
+    axes[0].legend(loc="lower left", fontsize=7, handlelength=1.6, borderaxespad=0.2)
     fig.tight_layout()
     fig.savefig(OUT / "size_curves.pdf")
     plt.close(fig)
     n_per = enum.groupby(["Model", "n_gold"]).size()
     macro("nperanswersize", f"{n_per.min()}--{n_per.max()}")
+    per_q = enum.groupby("id")[["n_gold", "n_rows"]].first()
+    macro("sizecorr", f"{np.corrcoef(np.log(per_q.n_gold), np.log(per_q.n_rows))[0, 1]:.2f}")
 
-    # ---- T: trend - odds ratio per doubling of answer size (logistic regression, bootstrap CI)
+    # ---- Trend: logistic regression on log2(answer size), log2(table size) and format, per model and pooled
+    enum["lg"] = np.log2(enum.n_gold)
+    enum["ln"] = np.log2(enum.n_rows)
+    for f in ["csv", "json", "nl"]:
+        enum[f] = (enum.fmt == f).astype(float)
+    cols = ["lg", "ln", "csv", "json", "nl"]
     trow = []
     for m in ORDER:
         g = enum[enum.Model == m]
-        x, yv = np.log2(g.n_gold.values.astype(float)), g.exact.values.astype(float)
-        b = logit_slope(x, yv)
-        boots = []
-        for _ in range(B):
-            idx = RNG.integers(0, len(g), len(g))
-            boots.append(logit_slope(x[idx], yv[idx]))
-        lo, hi = np.percentile(boots, [2.5, 97.5])
+        X, yv = g[cols].values, g.exact.values.astype(float)
+        w = logit(X, yv)
+        bs = logit_boot(X, yv, RNG)
+        fails = int((yv == 0).sum())
         small, large = g[g.n_gold <= 10].exact.mean(), g[g.n_gold >= 50].exact.mean()
-        n_fail = int((yv == 0).sum())
-        orcell = (f"{np.exp(b):.2f} [{np.exp(lo):.2f}, {np.exp(hi):.2f}]" if np.exp(hi) < 20
-                  else f"not estimable ({n_fail} failures)")
-        trow.append([m, pct(small), pct(large), orcell])
-        key = KEY[m]
-        macro(f"small{key}", pct(small))
-        macro(f"large{key}", pct(large))
-        macro(f"or{key}", f"{np.exp(b):.2f}")
-    write_table(OUT / "trend.tex", ["Model", r"$\leq$10 items (\%)", r"$\geq$50 items (\%)",
-                                    r"Odds ratio per doubling [95\% CI]"], trow, "lrrr")
+        trow.append([m, pct(small), pct(large), str(fails), or_cell(w, bs, 1, fails), or_cell(w, bs, 2, fails)])
+        macro(f"small{KEY[m]}", pct(small))
+        macro(f"large{KEY[m]}", pct(large))
+    dums = pd.get_dummies(enum.Model)[ORDER[1:]].values.astype(float)
+    Xp, yp = np.column_stack([enum[cols].values, dums]), enum.exact.values.astype(float)
+    wp = logit(Xp, yp)
+    bp = logit_boot(Xp, yp, RNG, clusters=enum.id.values)
+    pooled = [np.exp(wp[j]) for j in (1, 2)]
+    pci = [np.exp(np.percentile(bp[:, j], [2.5, 97.5])) for j in (1, 2)]
+    trow.append([r"\textit{All models (pooled)}", pct(enum[enum.n_gold <= 10].exact.mean()),
+                 pct(enum[enum.n_gold >= 50].exact.mean()), str(int((yp == 0).sum())),
+                 f"{pooled[0]:.2f} [{pci[0][0]:.2f}, {pci[0][1]:.2f}]",
+                 f"{pooled[1]:.2f} [{pci[1][0]:.2f}, {pci[1][1]:.2f}]"])
+    write_table(OUT / "trend.tex", ["Model", r"$\leq$10 items (\%)", r"$\geq$50 items (\%)", "Failures",
+                                    r"OR: answer size [95\% CI]", r"OR: table size [95\% CI]"], trow, "lrrrrr",
+                midrules=(len(ORDER),))
+    macro("orpooledanswer", f"{pooled[0]:.2f}")
+    macro("orpooledanswerci", f"{pci[0][0]:.2f}--{pci[0][1]:.2f}")
+    macro("orpooledtable", f"{pooled[1]:.2f}")
+    macro("orpooledtableci", f"{pci[1][0]:.2f}--{pci[1][1]:.2f}")
 
-    # ---- T: exact-set accuracy by operation (in context)
+    # ---- Exact-set accuracy by operation, and by input format (in context)
     orow = []
     for op, label in OPS:
         g = ctx[ctx.op == op]
         if g.empty:
             continue
-        cells = []
-        for m in ORDER:
-            h = g[g.Model == m]
-            cells.append(pct(h.exact.mean()))
-        orow.append([label, str(len(g) // len(ORDER))] + cells)
-    write_table(OUT / "by_operation.tex", ["Operation", "Qs"] + [m.replace(" ", r"\ ") for m in ORDER],
-                orow, "lr" + "r" * len(ORDER))
+        orow.append([label, str(len(g) // len(ORDER))] + [pct(g[g.Model == m].exact.mean()) for m in ORDER])
+    write_table(OUT / "by_operation.tex", ["Operation", "Qs"] + [m.replace(" ", r"\ ") for m in ORDER], orow,
+                "lr" + "r" * len(ORDER))
+    frow = []
+    for f, label in FMTS:
+        g = ctx[ctx.fmt == f]
+        frow.append([label, str(len(g) // len(ORDER))] + [pct(g[g.Model == m].exact.mean()) for m in ORDER])
+    write_table(OUT / "by_format.tex", ["Input format", "Qs"] + [m.replace(" ", r"\ ") for m in ORDER], frow,
+                "lr" + "r" * len(ORDER))
 
-    # ---- T: memory-only and retrieval settings
+    # ---- Memory-only and retrieval settings
     srow = []
     for m in ORDER:
         p = e1[(e1.Model == m) & (e1.setting == "parametric")]
@@ -303,7 +322,7 @@ def main() -> None:
     write_table(OUT / "settings.tex", ["Model", r"Memory: exact (\%)", "Memory: recall", "Retrieval: recall",
                                        "Retrieval: recall over retrieved"], srow, "lrrrr")
 
-    # ---- T: scalar aggregation
+    # ---- Scalar aggregation
     sc = e1[e1.answer_type == "scalar"]
     arow = []
     for m in ORDER:
@@ -313,80 +332,123 @@ def main() -> None:
                      str(int((wrong.signed_error > 0).sum()))])
     write_table(OUT / "scalar.tex", ["Model", "Qs", r"Exact (\%)", "Under-counts", "Over-counts"], arow, "lrrrr")
     macro("nscalar", len(sc) // len(ORDER))
+    nonds = sc[~sc.Model.str.startswith("DeepSeek") & ~sc.exact]
+    macro("scalarerrors", len(nonds))
+    macro("scalarunder", int((nonds.signed_error < 0).sum()))
 
-    # ---- F: reasoning tokens vs answer size
+    # ---- Figure: reasoning tokens vs answer size
     fig, ax = plt.subplots(figsize=(3.4, 2.4))
     for m in ORDER:
         r = enum[enum.Model == m].groupby("n_gold").reasoning.median()
         ax.plot(r.index, r.values.clip(min=5), color=COLOR[m], marker=MARKER[m], label=m)
+        macro(f"rsmall{KEY[m]}", f"{r.iloc[0]:,.0f}")
+        macro(f"rlarge{KEY[m]}", f"{r.iloc[-1]:,.0f}")
     ax.set(xscale="log", yscale="log", xlabel="Correct items in the answer", ylabel="Median reasoning tokens")
     ax.set_xticks(sorted(enum.n_gold.unique()), [str(v) for v in sorted(enum.n_gold.unique())])
     ax.minorticks_off()
     ax.legend(fontsize=6.5, loc="center left", bbox_to_anchor=(1.02, 0.5))
     fig.savefig(OUT / "reasoning.pdf")
     plt.close(fig)
-    rs = {}
-    for m in ORDER:
-        r = enum[enum.Model == m].groupby("n_gold").reasoning.median()
-        rs[m] = (r.iloc[0], r.iloc[-1])
-    for m, (a, b) in rs.items():
-        key = KEY[m]
-        macro(f"rsmall{key}", f"{a:,.0f}")
-        macro(f"rlarge{key}", f"{b:,.0f}")
     fl = enum[enum.Model == "MiMo-V2.6 Flash"]
     shallow, deep = fl[fl.reasoning < 100], fl[fl.reasoning >= 100]
     macro("flashshallown", len(shallow))
     macro("flashshallowexact", pct(shallow.exact.mean()))
-    macro("flashdeepn", len(deep))
     macro("flashdeepexact", pct(deep.exact.mean()))
 
-    # ---- T: prompting (paired, 100-question subset)
-    sub = df[(df.repeat == 0) & ~df.api_error & (df.answer_type != "scalar")]
-    prow = []
+    # ---- Prompt variants (E2): paired change from the direct prompt on the same questions
+    sub = df[(df.repeat == 0) & (df.state != "api_error") & (df.answer_type != "scalar")]
+    prow, e2_models = [], set()
     for m in ORDER:
         g = sub[sub.Model == m]
-        d = g.pivot_table(index="id", columns="variant", values="recall", aggfunc="first")
+        # A second provider's E2 is compared with that same provider's direct run, so the pairing never
+        # mixes providers.
+        other_provider = g[g.variant != "direct"].model.isin(ALSO).any()
+        g = g[g.model.isin(ALSO)] if other_provider else g[g.model.isin(SHORT)]
         e = g.assign(x=g.exact.astype(float)).pivot_table(index="id", columns="variant", values="x",
                                                           aggfunc="first")
-        cells = [m]
+        cells = [m + (r"$^\dagger$" if other_provider else "")]
         for v in ["exhaustive", "rowwise"]:
-            if v not in d.columns:
+            if v not in e.columns:
                 cells += ["--", "--"]
                 continue
             pair = e[["direct", v]].dropna()
-            diff = (pair[v] - pair["direct"]).values
-            lo, hi = boot_mean(diff)
-            cells += [f"{len(pair)}", f"${100 * diff.mean():+.1f}$ [{100 * lo:+.1f}, {100 * hi:+.1f}]"]
+            dd = (pair[v] - pair["direct"]).values
+            lo, hi = boot_mean(dd, RNG)
+            cells += [f"{len(pair)}", f"${100 * dd.mean():+.1f}$ [{100 * lo:+.1f}, {100 * hi:+.1f}]"]
+            e2_models.add(m)
         prow.append(cells)
     write_table(OUT / "prompting.tex", ["Model", "Qs", r"Exhaustive $-$ direct (pp)", "Qs",
                                         r"Row-by-row $-$ direct (pp)"], prow, "lrrrr")
+    missing_e2 = [m for m in ORDER if m not in e2_models]
+    macro("etwonote", (f"{', '.join(missing_e2)}'s E2 runs are pending (provider usage limits)." if missing_e2
+                       else r"$^\dagger$E2 run through a second provider (OpenRouter) for the same model."))
 
-    # ---- T: run-to-run agreement (second independent sample of the direct prompt)
-    d = df[(df.variant == "direct") & ~df.api_error & (df.answer_type != "scalar")]
+    # ---- Run-to-run agreement (E1 vs E3)
+    d = df[(df.variant == "direct") & (df.state != "api_error") & (df.answer_type != "scalar") & df.model.isin(SHORT)]
     rrow = []
     for m in ORDER:
         g = d[d.Model == m]
-        a = g[g.repeat == 0].set_index("id").exact
-        b = g[g.repeat == 1].set_index("id").exact
-        j = pd.concat([a, b], axis=1, join="inner", keys=["a", "b"])
+        j = pd.concat([g[g.repeat == 0].set_index("id").exact, g[g.repeat == 1].set_index("id").exact],
+                      axis=1, join="inner", keys=["a", "b"])
         if j.empty:
             rrow.append([m, "--", "--", "--"])
             continue
-        same = (j.a == j.b)
-        lo, hi = wilson(same.sum(), len(j))
-        flip = (~same).sum()
-        rrow.append([m, str(len(j)), f"{pct(same.mean())} {ci_pct(lo, hi)}", str(int(flip))])
-    write_table(OUT / "repeats.tex", ["Model", "Qs", r"Same verdict (\%)", "Questions that flipped"], rrow,
-                "lrrr")
+        same = j.a == j.b
+        rrow.append([m, str(len(j)), f"{pct(same.mean())} {ci_pct(*wilson(same.sum(), len(j)))}",
+                     str(int((~same).sum()))])
+    write_table(OUT / "repeats.tex", ["Model", "Qs", r"Same verdict (\%)", "Questions that flipped"], rrow, "lrrr")
 
-    # ---- Failure cases (from report/failure_cases.py)
-    # ---- F: miss rate by position of the correct row (appendix)
+    # ---- Worked examples, taken from the data
+    examples = []
+    ds = ctx[(ctx.Model == "DeepSeek V4 Pro") & (ctx.id == "enum-ctx-029")].iloc[0]
+    q = qmap["enum-ctx-029"]
+    t = bench.tables_for(q)[0]
+    keys = [norm(k) for k in t.col(t.key)]
+    names = {norm(r[0]): r[0] for r in t.rows}
+    missed = [x[0] for x in ds.missed_items]
+    rows_at = [keys.index(x) + 1 for x in missed]
+    reruns = []
+    for k in (1, 2, 3):  # the same question re-run three times (results/failure_cases, OpenRouter)
+        path = ROOT / "results" / "failure_cases" / f"openrouter_deepseek_deepseek-v4-pro__direct__r{k}.jsonl"
+        if path.exists():
+            for line in path.open():
+                r = json.loads(line)
+                if r["id"] == q.id and r.get("text"):
+                    reruns.append(score(q, bench, r["text"]))
+    rr = ""
+    if reruns:
+        n_missed = [m["missing"] + m["near_miss"] for m in reruns]
+        common = set.intersection(*({x[0] for x in m["missed_items"]} for m in reruns))
+        n_added = [m["wrong"] + m["made_up"] for m in reruns]
+        rr = (f" In three re-runs the answer was incomplete every time, omitting {min(n_missed)}--{max(n_missed)} "
+              f"names, a different set each time"
+              + (f" ({', '.join(tex_escape(names[x]) for x in sorted(common))} in all three)" if common else "")
+              + (f", and {sum(1 for v in n_added if v)} of the three re-runs also added an incorrect name"
+                 if any(n_added) else "") + ".")
+    examples.append(
+        rf"\textbf{{Omission (DeepSeek V4 Pro, \texttt{{enum-ctx-029}}).}} Prompt: {len(t.rows)} employee records "
+        rf"as CSV ($\approx${q.meta['context_chars'] / 4000:.0f}k tokens), then \emph{{``{tex_escape(q.question)}''}} "
+        rf"Gold answer: {len(q.gold)} names. The model returned {int(ds.n_pred)} names, all correct, and omitted "
+        + ", ".join(f"{tex_escape(names[x])} (row {p} of {len(t.rows)})" for x, p in zip(missed, rows_at))
+        + "." + rr)
+    fw = ctx[(ctx.Model == "MiMo-V2.6 Flash") & (ctx.id == worst.id)].iloc[0]
+    qf = qmap[worst.id]
+    madeup = [x[0] for x in fw.extra_items][:4]
+    examples.append(
+        rf"\textbf{{Fabrication (MiMo-V2.6 Flash, \texttt{{{worst.id}}}).}} Prompt: {qf.meta['n_rows']:,} "
+        rf"{ENTITY[qf.meta['domain']][0]} records; \emph{{``{tex_escape(qf.question)}''}} Gold answer: {len(qf.gold)} items. "
+        rf"The model returned {int(fw.n_pred):,} distinct items (plus {int(fw.duplicates)} repeats), of which "
+        rf"{int(fw.tp)} were correct and {int(fw.made_up)} do not exist in the data, for example "
+        + ", ".join("``" + tex_escape(title_case(x)) + "''" for x in madeup) + ".")
+    (OUT / "examples.tex").write_text("\n\n".join(examples) + "\n")
+
+    # ---- Figure: miss rate by position (appendix)
     pos_rows = []
-    for _, r in enum.iterrows():
+    for _, r in enum[enum.valid].iterrows():
         q = qmap[r.id]
         t = bench.tables_for(q)[0]
         keys = [norm(k) for k in t.col(t.key)]
-        missed = {x[0] for x in (r.missed_items if isinstance(r.missed_items, list) else [])}
+        missed = {x[0] for x in r.missed_items}
         for gld in q.gold:
             i = keys.index(norm(gld[0]))
             pos_rows.append({"Model": r.Model, "decile": min(9, int(10 * i / len(keys))),
@@ -401,26 +463,23 @@ def main() -> None:
     fig.savefig(OUT / "position.pdf")
     plt.close(fig)
 
-    # ---- Usage (every call, including retries and all experiments)
+    # ---- Usage: successful calls and failed attempts, all experiments
     u = load_usage(args.results)
-    u = u[u.model.isin(SHORT)]
-    ut = usage_table(u).reset_index()
-    ut = ut[ut.model != "TOTAL"]
-    ut["Model"] = ut.model.map(SHORT)
-    agg = ut.groupby("Model").agg(calls=("calls", "sum"), inp=("input_tokens", "sum"), out=("output_tokens", "sum"),
-                                  rea=("reasoning_tokens", "sum"), cost=("cost_usd", "sum")).reindex(ORDER)
-    lat = u.assign(Model=u.model.map(SHORT)).groupby("Model").latency_s.median().reindex(ORDER)
-    access = {"DeepSeek V4 Pro": "OpenCode Go", "DeepSeek V4 Flash": "OpenCode Go",
-              "Claude Haiku 5.5": "Claude Code CLI", "MiMo-V2.6 Pro": "OpenRouter", "MiMo-V2.6 Flash": "OpenRouter"}
-    write_table(OUT / "usage.tex", ["Model", "Access", "Calls", "Input (M)", "Output (M)",
-                                    r"Reasoning (\%)", "Cost (USD)", "Latency (s)"],
-                [[m, access[m], f"{int(agg.loc[m, 'calls']):,}", f"{agg.loc[m, 'inp'] / 1e6:.2f}",
-                  f"{agg.loc[m, 'out'] / 1e6:.2f}", pct(agg.loc[m, "rea"] / agg.loc[m, "out"]),
-                  f"{agg.loc[m, 'cost']:.2f}", f"{lat.loc[m]:.1f}"] for m in ORDER], "llrrrrrr")
-    share = agg.rea / agg.out
+    u["Model"] = u.model.map({**SHORT, **ALSO})
+    u = u[u.Model.notna()]
+    ok = u[u.output > 0]
+    urow = []
+    for m in ORDER:
+        g, a = ok[ok.Model == m], u[u.Model == m]
+        urow.append([m, ACCESS[m], f"{len(g):,}", f"{len(a) - len(g):,}", f"{g.input.sum() / 1e6:.2f}",
+                     f"{g.output.sum() / 1e6:.2f}", pct(g.reasoning.sum() / g.output.sum()),
+                     f"{g.cost_usd.sum():.2f}", f"{g.latency_s.median():.1f}"])
+    write_table(OUT / "usage.tex", ["Model", "Access", "Calls", "Failed", "Input (M)", "Output (M)",
+                                    r"Reasoning (\%)", "Cost (USD)", "Latency (s)"], urow, "llrrrrrrr")
+    share = ok.groupby("Model").reasoning.sum() / ok.groupby("Model").output.sum()
     macro("reasonshare", f"{pct(share.min())}--{pct(share.max())}")
-    macro("totalcalls", f"{int(agg.calls.sum()):,}")
-    macro("totalcost", f"{agg.cost.sum():.2f}")
+    macro("totalcalls", f"{len(ok):,}")
+    macro("failedcalls", f"{len(u) - len(ok):,}")
 
     # ---- Run facts
     mans = [json.loads(p.read_text()) for p in sorted((args.results / "manifests").glob("*.json"))]
@@ -431,9 +490,8 @@ def main() -> None:
     macro("ntables", f"{len(bench.tables):,}")
     macro("nrecords", f"{sum(len(t.rows) for t in bench.tables.values()):,}")
 
-    (OUT / "numbers.tex").write_text(
-        "\n".join(rf"\newcommand{{\{k}}}{{{v}}}" for k, v in MACROS.items()) + "\n")
-    print(pd.DataFrame(stats).T[["exact", "recall", "precision", "omit", "commit"]].round(3).to_string())
+    (OUT / "numbers.tex").write_text("\n".join(rf"\newcommand{{\{k}}}{{{v}}}" for k, v in MACROS.items()) + "\n")
+    print(pd.DataFrame(stats).T[["exact", "recall", "precision", "omit", "commit", "n_invalid"]].to_string())
     print(f"wrote {len(list(OUT.iterdir()))} files to {OUT}")
 
 

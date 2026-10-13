@@ -167,9 +167,12 @@ def claude_cli(model: str, messages: list[dict], timeout: int = 600) -> dict:
             "cost_usd": r.get("total_cost_usd")}  # list-price equivalent; a subscription is not billed per call
 
 
-def is_blocked(error: str | None) -> bool:
-    """A provider safety filter refused the request: a final outcome, not something a retry fixes."""
-    return bool(error) and "content filtering" in error.lower()
+def is_blocked(error: str | None = None, finish_reason: str | None = None) -> bool:
+    """A provider safety filter refused or cut off the answer: a final outcome, not something a retry fixes.
+
+    Claude Code reports it as an error message; OpenAI-compatible APIs as finish_reason "content_filter".
+    """
+    return (bool(error) and "content filtering" in error.lower()) or finish_reason == "content_filter"
 
 
 def mock_response(model: str, q: Question) -> str:
