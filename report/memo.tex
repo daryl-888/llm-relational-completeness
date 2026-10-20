@@ -66,8 +66,8 @@ SQL. What is new here:
 
 \textbf{Feasibility verdict: proceed, with changes.}
 \begin{itemize}
-\item \emph{Robust?} Yes, as a rate. Two independent samples agree on 87--100\% of verdicts, and model
-differences are statistically clear: three models trail the best by 7--17 points, with intervals excluding zero.
+\item \emph{Robust?} Yes, as a rate. Two independent samples agree on \agreemin--\agreemax\% of verdicts, and model
+differences are statistically clear: \nsigbelow{} models trail the best by \deltamin--\deltamax{} points, with intervals excluding zero.
 Individual failures sometimes recur and sometimes don't, so results should be reported over many questions and
 several samples.
 \item \emph{Generalizable?} Across operations, mostly yes. Across access paths, partly: the memory-only slice

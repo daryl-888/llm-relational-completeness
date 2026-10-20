@@ -15,6 +15,7 @@ Conventions:
 """
 import argparse
 import json
+import re
 from pathlib import Path
 
 import matplotlib
@@ -24,7 +25,8 @@ import matplotlib.pyplot as plt  # noqa: E402
 import numpy as np  # noqa: E402
 import pandas as pd  # noqa: E402
 
-from relcomplete.report import load_results, load_usage  # noqa: E402
+from relcomplete.gen.common import key_label  # noqa: E402
+from relcomplete.report import load_results, load_usage, outcome, repeat_agreement, usage_summary  # noqa: E402
 from relcomplete.schema import Benchmark  # noqa: E402
 from relcomplete.score import norm, score  # noqa: E402
 from relcomplete.stats import boot_mean, logit, logit_boot, wilson  # noqa: E402
@@ -32,7 +34,7 @@ from relcomplete.synth import ENTITY  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / "report" / "generated"
-RNG = np.random.default_rng(0)
+DOCS = [ROOT / "report" / "report.tex", ROOT / "report" / "memo.tex"]  # numbers.tex keeps only macros these use
 
 # Models in the paper and the result files that represent them. MiMo was run to completion on OpenRouter; its
 # partial OpenCode Go runs and the stopped Haiku 4.5 run (90 questions) are excluded. ALSO maps a model's runs
@@ -41,6 +43,13 @@ SHORT = {"opencode-go/deepseek-v4-pro": "DeepSeek V4 Pro", "opencode-go/deepseek
          "claude-cli/claude-haiku-5-5": "Claude Haiku 5.5", "xiaomi/mimo-v2.6-pro": "MiMo-V2.6 Pro",
          "xiaomi/mimo-v2.6-flash": "MiMo-V2.6 Flash"}
 ALSO = {"openrouter/deepseek/deepseek-v4-pro": "DeepSeek V4 Pro"}
+ALSO_ACCESS = {"openrouter/deepseek/deepseek-v4-pro": "OpenRouter"}
+# Worked examples in Box 1: (model, question id, re-run file stem in results/failure_cases). The fabrication
+# example is the MiMo-V2.6 Flash answer with the most made-up items.
+OMISSION_EXAMPLE = ("DeepSeek V4 Pro", "enum-ctx-029", "openrouter_deepseek_deepseek-v4-pro__direct")
+FABRICATION_MODEL = "MiMo-V2.6 Flash"
+WORDS = {0: "none", 1: "one", 2: "two", 3: "three", 4: "four", 5: "five", 6: "six"}
+FMT_KEY = {"markdown": "Md", "csv": "Csv", "json": "Json", "nl": "Nl"}
 ORDER = list(SHORT.values())
 KEY = dict(zip(ORDER, ["DSPro", "DSFlash", "Haiku", "MiMoPro", "MiMoFlash"]))  # letters only, for \macros
 ACCESS = {"DeepSeek V4 Pro": "OpenCode Go", "DeepSeek V4 Flash": "OpenCode Go", "Claude Haiku 5.5": "Claude Code CLI",
@@ -85,9 +94,13 @@ def ci_pct(lo: float, hi: float, d: int = 0) -> str:
     return f"[{pct(lo, d)}, {pct(hi, d)}]"
 
 
+_TEX = {"\\": r"\textbackslash{}", "&": r"\&", "%": r"\%", "$": r"\$", "#": r"\#", "_": r"\_", "{": r"\{",
+        "}": r"\}", "~": r"\textasciitilde{}", "^": r"\textasciicircum{}"}
+
+
 def tex_escape(s: str) -> str:
-    return (str(s).replace("\\", r"\textbackslash{}").replace("&", r"\&").replace("%", r"\%")
-            .replace("_", r"\_").replace("#", r"\#").replace("$", r"\$"))
+    """Escape text (including model output) for LaTeX, one character at a time so replacements never stack."""
+    return "".join(_TEX.get(ch, ch) for ch in str(s))
 
 
 def title_case(s: str) -> str:
@@ -119,6 +132,8 @@ def main() -> None:
     ap.add_argument("--results", type=Path, default=ROOT / "results" / "full_v0")
     ap.add_argument("--bench", type=Path, default=ROOT / "data" / "benchmark_v0")
     args = ap.parse_args()
+    MACROS.clear()  # main() may run more than once in a process; never carry numbers over
+    rng = np.random.default_rng(0)
     OUT.mkdir(parents=True, exist_ok=True)
     bench = Benchmark.load(args.bench)
     qmap = {q.id: q for q in bench.questions}
@@ -126,14 +141,13 @@ def main() -> None:
     df = load_results(args.results, bench)
     df["Model"] = df.model.map({**SHORT, **ALSO})
     df = df[df.Model.notna()].copy()
-    df["exact"] = df.exact.astype(bool)
-    df["state"] = np.where((df.outcome == "answered") & ~df.parse_ok.astype(bool), "unparseable", df.outcome)
-    df["valid"] = df.state == "answered"
+    df["exact"] = df.exact.astype(bool)  # state and valid come from load_results
     e1 = df[(df.repeat == 0) & (df.variant == "direct") & df.model.isin(SHORT)]
     ctx = e1[(e1.setting == "context") & (e1.answer_type != "scalar")].copy()  # the core: 365 questions
     ctx["omission"] = ctx.valid & (ctx.missing.fillna(0) + ctx.near_miss.fillna(0) > 0)
     ctx["commission"] = ctx.valid & (ctx.wrong.fillna(0) + ctx.made_up.fillna(0) + ctx.duplicates.fillna(0) > 0)
     macro("nctx", ctx.groupby("Model").size().iloc[0])
+    macro("neone", f"{len(e1):,}")
 
     # ---- Benchmark composition
     comp = []
@@ -155,19 +169,20 @@ def main() -> None:
         g = ctx[ctx.Model == m]
         n, k = len(g), int(g.exact.sum())
         stats[m] = {"exact": k / n, "exact_ci": wilson(k, n), "recall": g.recall.mean(),
-                    "recall_ci": boot_mean(g.recall, RNG), "precision": g[g.valid].precision.mean(),
+                    "recall_ci": boot_mean(g.recall, rng), "precision": g[g.valid].precision.mean(),
                     "omit": g.omission.mean(), "commit": g.commission.mean(), "n_invalid": int((~g.valid).sum())}
     best = max(ORDER, key=lambda m: stats[m]["exact"])
     piv = ctx.pivot_table(index="id", columns="Model", values="exact", aggfunc="first").astype(float)
-    rows = []
+    rows, below, tied = [], [], []
     for m in ORDER:
         s = stats[m]
         if m == best:
             diff = "(reference)"
         else:
             dd = (piv[m] - piv[best]).dropna().values
-            lo, hi = boot_mean(dd, RNG)
+            lo, hi = boot_mean(dd, rng)
             diff = f"${100 * dd.mean():+.1f}$ [{100 * lo:+.1f}, {100 * hi:+.1f}]"
+            (below.append(-100 * dd.mean()) if hi < 0 else tied.append(m))
         rows.append([m, f"{pct(s['exact'])} {ci_pct(*s['exact_ci'])}", diff,
                      f"{s['recall']:.3f} [{s['recall_ci'][0]:.3f}, {s['recall_ci'][1]:.3f}]",
                      f"{s['precision']:.3f}", pct(s["omit"]), pct(s["commit"]), str(s["n_invalid"])])
@@ -178,6 +193,10 @@ def main() -> None:
     write_table(OUT / "main.tex", ["Model", r"Exact-set acc.\ (\%)", r"$\Delta$ vs.\ best (pp)", "Mean recall",
                                    "Mean prec.", r"Omit.\ (\%)", r"Comm.\ (\%)", "Invalid"], rows, "lrrrrrrr")
     macro("bestmodel", best)
+    macro("tiedwithbest", " and ".join(tied) if tied else "no other model")
+    macro("nsigbelow", WORDS.get(len(below), str(len(below))))
+    macro("deltamin", f"{min(below):.0f}" if below else "--")
+    macro("deltamax", f"{max(below):.0f}" if below else "--")
     ex, rc, om = ([stats[m][k] for m in ORDER] for k in ("exact", "recall", "omit"))
     macro("exactmin", pct(min(ex)))
     macro("exactmax", pct(max(ex)))
@@ -201,7 +220,7 @@ def main() -> None:
     macro("flashworstmade", f"{int(worst.made_up):,}")
     macro("flashworstgold", int(worst.n_gold))
     inc = valid_ctx[valid_ctx.missing + valid_ctx.near_miss > 0]
-    macro("medianmissed", f"{inc.missing.median():.0f}")
+    macro("medianmissed", f"{(inc.missing + inc.near_miss).median():.0f}")
     macro("smallmissshare", pct(((inc.missing + inc.near_miss) / inc.n_gold <= 0.10).mean()))
 
     # ---- Invalid answers (all 500 E1 questions)
@@ -272,16 +291,19 @@ def main() -> None:
         g = enum[enum.Model == m]
         X, yv = g[cols].values, g.exact.values.astype(float)
         w = logit(X, yv)
-        bs = logit_boot(X, yv, RNG)
+        bs = logit_boot(X, yv, rng)
         fails = int((yv == 0).sum())
         small, large = g[g.n_gold <= 10].exact.mean(), g[g.n_gold >= 50].exact.mean()
         trow.append([m, pct(small), pct(large), str(fails), or_cell(w, bs, 1, fails), or_cell(w, bs, 2, fails)])
         macro(f"small{KEY[m]}", pct(small))
         macro(f"large{KEY[m]}", pct(large))
+        macro(f"fail{KEY[m]}", fails)
+    macro("nenum", enum.groupby("Model").size().iloc[0])
+    macro("smallmin", pct(min(enum[(enum.Model == m) & (enum.n_gold <= 10)].exact.mean() for m in ORDER)))
     dums = pd.get_dummies(enum.Model)[ORDER[1:]].values.astype(float)
     Xp, yp = np.column_stack([enum[cols].values, dums]), enum.exact.values.astype(float)
     wp = logit(Xp, yp)
-    bp = logit_boot(Xp, yp, RNG, clusters=enum.id.values)
+    bp = logit_boot(Xp, yp, rng, clusters=enum.id.values)
     pooled = [np.exp(wp[j]) for j in (1, 2)]
     pci = [np.exp(np.percentile(bp[:, j], [2.5, 97.5])) for j in (1, 2)]
     trow.append([r"\textit{All models (pooled)}", pct(enum[enum.n_gold <= 10].exact.mean()),
@@ -309,6 +331,8 @@ def main() -> None:
     for f, label in FMTS:
         g = ctx[ctx.fmt == f]
         frow.append([label, str(len(g) // len(ORDER))] + [pct(g[g.Model == m].exact.mean()) for m in ORDER])
+        for m in ORDER:
+            macro(f"fmt{KEY[m]}{FMT_KEY[f]}", pct(g[g.Model == m].exact.mean()))
     write_table(OUT / "by_format.tex", ["Input format", "Qs"] + [m.replace(" ", r"\ ") for m in ORDER], frow,
                 "lr" + "r" * len(ORDER))
 
@@ -321,6 +345,9 @@ def main() -> None:
                      f"{r.recall_in_context.mean():.3f}"])
     write_table(OUT / "settings.tex", ["Model", r"Memory: exact (\%)", "Memory: recall", "Retrieval: recall",
                                        "Retrieval: recall over retrieved"], srow, "lrrrr")
+    rag_recall = sorted({r[3] for r in srow})
+    macro("ragrecall", f"{rag_recall[0]} for all models" if len(rag_recall) == 1
+          else f"{rag_recall[0]}--{rag_recall[-1]}")
 
     # ---- Scalar aggregation
     sc = e1[e1.answer_type == "scalar"]
@@ -368,12 +395,12 @@ def main() -> None:
                                                           aggfunc="first")
         cells = [m + (r"$^\dagger$" if other_provider else "")]
         for v in ["exhaustive", "rowwise"]:
-            if v not in e.columns:
+            if v not in e.columns or "direct" not in e.columns:  # nothing to pair with
                 cells += ["--", "--"]
                 continue
             pair = e[["direct", v]].dropna()
             dd = (pair[v] - pair["direct"]).values
-            lo, hi = boot_mean(dd, RNG)
+            lo, hi = boot_mean(dd, rng)
             cells += [f"{len(pair)}", f"${100 * dd.mean():+.1f}$ [{100 * lo:+.1f}, {100 * hi:+.1f}]"]
             e2_models.add(m)
         prow.append(cells)
@@ -384,62 +411,88 @@ def main() -> None:
                        else r"$^\dagger$E2 run through a second provider (OpenRouter) for the same model."))
 
     # ---- Run-to-run agreement (E1 vs E3)
-    d = df[(df.variant == "direct") & (df.state != "api_error") & (df.answer_type != "scalar") & df.model.isin(SHORT)]
-    rrow = []
+    ag = repeat_agreement(df[(df.answer_type != "scalar") & df.model.isin(SHORT)])
+    rrow, agree = [], []
     for m in ORDER:
-        g = d[d.Model == m]
-        j = pd.concat([g[g.repeat == 0].set_index("id").exact, g[g.repeat == 1].set_index("id").exact],
-                      axis=1, join="inner", keys=["a", "b"])
-        if j.empty:
+        mid = next(k for k, v in SHORT.items() if v == m)
+        if ag.empty or mid not in ag.index:
             rrow.append([m, "--", "--", "--"])
             continue
-        same = j.a == j.b
-        rrow.append([m, str(len(j)), f"{pct(same.mean())} {ci_pct(*wilson(same.sum(), len(j)))}",
-                     str(int((~same).sum()))])
+        n = int(ag.loc[mid, "n"])
+        same = int(round(ag.loc[mid, "exact_agreement"] * n))
+        agree.append(same / n)
+        rrow.append([m, str(n), f"{pct(same / n)} {ci_pct(*wilson(same, n))}", str(n - same)])
     write_table(OUT / "repeats.tex", ["Model", "Qs", r"Same verdict (\%)", "Questions that flipped"], rrow, "lrrr")
+    macro("agreemin", pct(min(agree)))
+    macro("agreemax", pct(max(agree)))
+    macro("flipmin", pct(1 - max(agree)))
+    macro("flipmax", pct(1 - min(agree)))
 
-    # ---- Worked examples, taken from the data
+    # ---- Worked examples (Box 1), stating only what the data shows
     examples = []
-    ds = ctx[(ctx.Model == "DeepSeek V4 Pro") & (ctx.id == "enum-ctx-029")].iloc[0]
-    q = qmap["enum-ctx-029"]
-    t = bench.tables_for(q)[0]
-    keys = [norm(k) for k in t.col(t.key)]
-    names = {norm(r[0]): r[0] for r in t.rows}
-    missed = [x[0] for x in ds.missed_items]
-    rows_at = [keys.index(x) + 1 for x in missed]
-    reruns = []
-    for k in (1, 2, 3):  # the same question re-run three times (results/failure_cases, OpenRouter)
-        path = ROOT / "results" / "failure_cases" / f"openrouter_deepseek_deepseek-v4-pro__direct__r{k}.jsonl"
-        if path.exists():
+    ex_model, ex_id, ex_stem = OMISSION_EXAMPLE
+    ds_rows = ctx[(ctx.Model == ex_model) & (ctx.id == ex_id) & ctx.valid]
+    if len(ds_rows):
+        ds, q = ds_rows.iloc[0], qmap[ex_id]
+        t = bench.tables_for(q)[0]
+        row_of = {norm(k): i + 1 for i, k in enumerate(t.col(t.key))}
+        names = {norm(k): k for k in t.col(t.key)}
+        noun = key_label(t.kind)[1]
+        missed = [x[0] for x in ds.missed_items]
+        n_extra = int(ds.wrong + ds.made_up + ds.duplicates)
+        got = (f"{int(ds.n_pred)} {noun}, all correct," if n_extra == 0
+               else f"{int(ds.n_pred)} {noun}, {int(ds.tp)} of them correct,")
+        reruns = []  # one answer per re-run file: its last record for the question, as load_results counts it
+        for path in sorted((ROOT / "results" / "failure_cases").glob(f"{ex_stem}__r*.jsonl")):
+            last = None
             for line in path.open():
                 r = json.loads(line)
-                if r["id"] == q.id and r.get("text"):
-                    reruns.append(score(q, bench, r["text"]))
-    rr = ""
-    if reruns:
-        n_missed = [m["missing"] + m["near_miss"] for m in reruns]
-        common = set.intersection(*({x[0] for x in m["missed_items"]} for m in reruns))
-        n_added = [m["wrong"] + m["made_up"] for m in reruns]
-        rr = (f" In three re-runs the answer was incomplete every time, omitting {min(n_missed)}--{max(n_missed)} "
-              f"names, a different set each time"
-              + (f" ({', '.join(tex_escape(names[x]) for x in sorted(common))} in all three)" if common else "")
-              + (f", and {sum(1 for v in n_added if v)} of the three re-runs also added an incorrect name"
-                 if any(n_added) else "") + ".")
-    examples.append(
-        rf"\textbf{{Omission (DeepSeek V4 Pro, \texttt{{enum-ctx-029}}).}} Prompt: {len(t.rows)} employee records "
-        rf"as CSV ($\approx${q.meta['context_chars'] / 4000:.0f}k tokens), then \emph{{``{tex_escape(q.question)}''}} "
-        rf"Gold answer: {len(q.gold)} names. The model returned {int(ds.n_pred)} names, all correct, and omitted "
-        + ", ".join(f"{tex_escape(names[x])} (row {p} of {len(t.rows)})" for x, p in zip(missed, rows_at))
-        + "." + rr)
-    fw = ctx[(ctx.Model == "MiMo-V2.6 Flash") & (ctx.id == worst.id)].iloc[0]
-    qf = qmap[worst.id]
-    madeup = [x[0] for x in fw.extra_items][:4]
-    examples.append(
-        rf"\textbf{{Fabrication (MiMo-V2.6 Flash, \texttt{{{worst.id}}}).}} Prompt: {qf.meta['n_rows']:,} "
-        rf"{ENTITY[qf.meta['domain']][0]} records; \emph{{``{tex_escape(qf.question)}''}} Gold answer: {len(qf.gold)} items. "
-        rf"The model returned {int(fw.n_pred):,} distinct items (plus {int(fw.duplicates)} repeats), of which "
-        rf"{int(fw.tp)} were correct and {int(fw.made_up)} do not exist in the data, for example "
-        + ", ".join("``" + tex_escape(title_case(x)) + "''" for x in madeup) + ".")
+                if r["id"] == ex_id:
+                    last = r
+            if last is not None and outcome(last) == "answered":
+                sc_ = score(q, bench, last["text"])
+                if sc_["parse_ok"]:
+                    reruns.append(sc_)
+        rr = ""
+        if reruns:
+            n = len(reruns)
+            inc_runs = [x for x in reruns if x["missing"] + x["near_miss"] > 0]
+            rr = f" In {WORDS.get(n, n)} re-runs the answer was incomplete " + (
+                "every time" if len(inc_runs) == n else f"{WORDS.get(len(inc_runs), len(inc_runs))} times")
+            if inc_runs:
+                counts = sorted(x["missing"] + x["near_miss"] for x in inc_runs)
+                rr += f", omitting {counts[0]}" + (f"--{counts[-1]}" if counts[-1] != counts[0] else "") + f" {noun}"
+                sets = [frozenset(x[0] for x in r_["missed_items"]) for r_ in inc_runs]
+                if len(sets) > 1 and len(set(sets)) == len(sets):
+                    rr += ", a different set each time"
+                common = frozenset.intersection(*sets) if len(sets) > 1 else frozenset()
+                if common:
+                    rr += (f" ({', '.join(tex_escape(names[x]) for x in sorted(common))} in all "
+                           f"{WORDS.get(len(sets), len(sets))})")
+            added = sum(1 for x in reruns if x["wrong"] + x["made_up"] > 0)
+            if added:
+                rr += f", and {WORDS.get(added, added)} of the {WORDS.get(n, n)} re-runs also added incorrect {noun}"
+            rr += "."
+        examples.append(
+            rf"\textbf{{Omission ({ex_model}, \texttt{{{ex_id}}}).}} Prompt: {len(t.rows):,} {ENTITY[t.kind][0]} "
+            rf"records as {dict(FMTS)[q.fmt]} ($\approx${q.meta['context_chars'] / 4000:.0f}k tokens), then "
+            rf"\emph{{``{tex_escape(q.question)}''}} Gold answer: {len(q.gold)} {noun}. The model returned {got} "
+            + "and omitted "
+            + ", ".join(f"{tex_escape(names[x])} (row {row_of[x]} of {len(t.rows):,})" for x in missed) + "." + rr)
+    fl_valid = ctx[(ctx.Model == FABRICATION_MODEL) & ctx.valid]
+    if len(fl_valid) and fl_valid.made_up.max() > 0:
+        fw = fl_valid.sort_values("made_up", ascending=False).iloc[0]
+        qf = qmap[fw.id]
+        tf = bench.tables_for(qf)[0]
+        real = {norm(k) for k in tf.col(tf.key)}
+        madeup = [x[0] for x in fw.extra_items if x[0] not in real][:4]  # extra items also include real, wrong ones
+        noun = key_label(tf.kind)[1]
+        examples.append(
+            rf"\textbf{{Fabrication ({FABRICATION_MODEL}, \texttt{{{fw.id}}}).}} Prompt: {len(tf.rows):,} "
+            rf"{ENTITY[tf.kind][0]} records; \emph{{``{tex_escape(qf.question)}''}} Gold answer: {len(qf.gold)} "
+            rf"{noun}. The model returned {int(fw.n_pred):,} distinct {noun} (plus {int(fw.duplicates)} repeats): "
+            rf"{int(fw.tp)} correct, {int(fw.wrong)} real but not matching, and {int(fw.made_up)} that do not exist "
+            rf"in the data, for example " + ", ".join("``" + tex_escape(title_case(x)) + "''" for x in madeup) + ".")
     (OUT / "examples.tex").write_text("\n\n".join(examples) + "\n")
 
     # ---- Figure: miss rate by position (appendix)
@@ -463,23 +516,28 @@ def main() -> None:
     fig.savefig(OUT / "position.pdf")
     plt.close(fig)
 
-    # ---- Usage: successful calls and failed attempts, all experiments
+    # ---- Usage: model responses and failed attempts, all experiments, one row per provider
     u = load_usage(args.results)
-    u["Model"] = u.model.map({**SHORT, **ALSO})
-    u = u[u.Model.notna()]
-    ok = u[u.output > 0]
+    u = u[u.model.isin({**SHORT, **ALSO})]
+    summ = usage_summary(u, "model")
     urow = []
     for m in ORDER:
-        g, a = ok[ok.Model == m], u[u.Model == m]
-        urow.append([m, ACCESS[m], f"{len(g):,}", f"{len(a) - len(g):,}", f"{g.input.sum() / 1e6:.2f}",
-                     f"{g.output.sum() / 1e6:.2f}", pct(g.reasoning.sum() / g.output.sum()),
-                     f"{g.cost_usd.sum():.2f}", f"{g.latency_s.median():.1f}"])
+        ids = [(k, m, ACCESS[m]) for k, v in SHORT.items() if v == m]
+        ids += [(k, m + r"$^\dagger$", ALSO_ACCESS[k]) for k, v in ALSO.items() if v == m]
+        for mid, label, access in ids:
+            if mid not in summ.index:
+                continue
+            r = summ.loc[mid]
+            urow.append([label, access, f"{int(r.calls):,}", f"{int(r.failed):,}", f"{r.input_tokens / 1e6:.2f}",
+                         f"{r.output_tokens / 1e6:.2f}", pct(r.reasoning_tokens / r.output_tokens),
+                         "--" if pd.isna(r.cost_usd) else f"{r.cost_usd:.2f}",
+                         "--" if pd.isna(r.median_latency_s) else f"{r.median_latency_s:.1f}"])
     write_table(OUT / "usage.tex", ["Model", "Access", "Calls", "Failed", "Input (M)", "Output (M)",
                                     r"Reasoning (\%)", "Cost (USD)", "Latency (s)"], urow, "llrrrrrrr")
-    share = ok.groupby("Model").reasoning.sum() / ok.groupby("Model").output.sum()
+    share = summ.reasoning_tokens / summ.output_tokens
     macro("reasonshare", f"{pct(share.min())}--{pct(share.max())}")
-    macro("totalcalls", f"{len(ok):,}")
-    macro("failedcalls", f"{len(u) - len(ok):,}")
+    macro("totalcalls", f"{int(summ.calls.sum()):,}")
+    macro("failedcalls", f"{int(summ.failed.sum()):,}")
 
     # ---- Run facts
     mans = [json.loads(p.read_text()) for p in sorted((args.results / "manifests").glob("*.json"))]
@@ -490,7 +548,9 @@ def main() -> None:
     macro("ntables", f"{len(bench.tables):,}")
     macro("nrecords", f"{sum(len(t.rows) for t in bench.tables.values()):,}")
 
-    (OUT / "numbers.tex").write_text("\n".join(rf"\newcommand{{\{k}}}{{{v}}}" for k, v in MACROS.items()) + "\n")
+    used = set(re.findall(r"\\([A-Za-z]+)", "".join(p.read_text() for p in DOCS if p.exists())))
+    kept = {k: v for k, v in MACROS.items() if k in used}  # only what the paper and memo actually reference
+    (OUT / "numbers.tex").write_text("\n".join(rf"\newcommand{{\{k}}}{{{v}}}" for k, v in kept.items()) + "\n")
     print(pd.DataFrame(stats).T[["exact", "recall", "precision", "omit", "commit", "n_invalid"]].to_string())
     print(f"wrote {len(list(OUT.iterdir()))} files to {OUT}")
 

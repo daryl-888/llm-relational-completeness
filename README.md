@@ -11,7 +11,7 @@ answers, the raw results for five models, and the paper built from them.
 - **Related work:** [docs/related_work.md](docs/related_work.md)
 - **Failure cases:** [docs/failure_cases.md](docs/failure_cases.md)
 
-## Main result
+## Main result (snapshot, 2026-10-13)
 On 365 questions whose records are in the prompt, mean recall is 0.966–0.996 for every model. Yet only 81–98% of
 answers are exactly the correct set. Errors are almost all omissions: models leave items out far more often than
 they add wrong ones. Completeness falls as answer sets grow and, separately, as tables grow. Prompting the model to
@@ -28,7 +28,7 @@ be exhaustive does not help. See the paper for intervals and details.
 ## Quick start
 ```bash
 python3 -m venv .venv && .venv/bin/pip install -e '.[dev]'
-.venv/bin/pytest -q                                   # 35 tests: gold answers, scorer, runner, stats, prompts
+.venv/bin/pytest -q                                   # 40 tests: gold answers, scorer, runner, stats, prompts, report
 .venv/bin/python scripts/run.py --model mock/oracle   # full pipeline, no API key or cost
 ```
 
@@ -54,7 +54,8 @@ scripts/run_full.sh opencode-go/deepseek-v4-flash      # E1 → E3 → E2 for on
 .venv/bin/python report/make_assets.py                 # every table, figure and number in the paper
 cd report && tectonic report.tex && tectonic memo.tex  # PDFs (https://tectonic-typesetting.github.io)
 ```
-The paper's figures and numbers are all generated from `results/full_v0/`, so they can't drift from the data.
+Every table, figure and result number in the paper and memo is generated from `results/full_v0/`; the prose
+quotes numbers through macros in `report/generated/numbers.tex`, so it can't drift from the data.
 [results/full_v0/README.md](results/full_v0/README.md) says which files feed the paper and which are excluded.
 
 | Experiment | Questions | Prompt | Purpose |

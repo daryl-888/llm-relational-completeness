@@ -35,14 +35,27 @@ def load_results(results_dir: Path, bench: Benchmark) -> pd.DataFrame:
                          "finish_reason": r.get("finish_reason"), "cached": r.get("cached", False),
                          "outcome": outcome(r), **normalise(r),
                          **score(q, bench, r.get("text"))})  # re-scored with the current scorer
-    return pd.DataFrame(recs)
+    df = pd.DataFrame(recs)
+    if df.empty:
+        return df
+    # state: the outcome, with "answered" split by whether the answer could be parsed. Only valid answers carry
+    # error types, so a truncated or unparseable answer is never counted as omitted items.
+    df["state"] = df.outcome.where(~((df.outcome == "answered") & ~df.parse_ok.astype(bool)), "unparseable")
+    df["valid"] = df.state == "answered"
+    error_cols = [c for c in ERROR_COLUMNS if c in df.columns]
+    df.loc[~df.valid, error_cols] = float("nan")
+    return df
+
+
+ERROR_COLUMNS = ["tp", "n_pred", "missing", "near_miss", "wrong", "made_up", "duplicates"]
 
 
 def outcome(r: dict) -> str:
     """What happened to a call, before looking at answer quality.
 
-    answered | truncated (hit the token limit) | refused (safety filter) | api_error | unparseable is decided
-    later from the score, since it depends on the parser. Only "answered" answers count towards error types.
+    answered | truncated (hit the token limit) | refused (safety filter) | empty (the provider returned no
+    content) | api_error (the call failed and is retried). load_results adds "unparseable" for answered calls
+    whose text could not be parsed.
     """
     from .models import is_blocked
 
@@ -51,7 +64,7 @@ def outcome(r: dict) -> str:
     if r.get("finish_reason") in ("length", "max_tokens"):
         return "truncated"
     if r.get("text") is None:
-        return "api_error"
+        return "api_error" if r.get("error") else "empty"
     return "answered"
 
 
@@ -60,8 +73,11 @@ def slice_name(df: pd.DataFrame) -> pd.Series:
 
 
 def repeat_agreement(df: pd.DataFrame) -> pd.DataFrame:
-    """How much do two independent samples of the same prompt differ? (questions run at repeat 0 and 1)"""
-    d = df[df.variant == "direct"]
+    """How much do two independent samples of the same prompt differ? (questions run at repeat 0 and 1)
+
+    Failed calls (state api_error) are not answers, so questions without a response in both samples are dropped.
+    """
+    d = df[(df.variant == "direct") & (df.state != "api_error")]
     a = d[d.repeat == 0].set_index(["model", "id"])
     b = d[d.repeat == 1].set_index(["model", "id"])
     j = a[["exact", "recall"]].join(b[["exact", "recall"]], rsuffix="_r1", how="inner")
@@ -106,13 +122,10 @@ def summary_tables(df: pd.DataFrame, usage: pd.DataFrame | None = None) -> str:
     out.append(usage_table(df if usage is None else usage).to_markdown())
     out.append("\n\nTokens are as reported by each provider. Cost is the provider's figure when it reports one, "
                "otherwise computed from `usage.PRICES`. Claude CLI costs are list-price equivalents: a subscription "
-               "is not billed per call. Calls counts every API call made, including retried attempts.\n")
-    out.append("\n\n## Parse failures and API errors\n")
-    out.append(df.groupby(["model", "variant"]).agg(
-        parse_fail=("parse_ok", lambda s: (~s.astype(bool)).sum()),
-        api_error=("error", lambda s: s.notna().sum()),
-        blocked=("error", lambda s: s.fillna("").str.lower().str.contains("content filtering").sum()),
-        truncated=("finish_reason", lambda s: (s == "length").sum())).to_markdown())
+               "is not billed per call. Calls counts model responses (including refusals); failed counts "
+               "attempts that returned a provider error and were retried.\n")
+    out.append("\n\n## Outcomes (answered, unparseable, truncated, refused, empty, api_error)\n")
+    out.append(df.groupby(["model", "variant"]).state.value_counts().unstack(fill_value=0).to_markdown())
     return "\n".join(out) + "\n"
 
 
@@ -124,21 +137,28 @@ def load_usage(results_dir: Path) -> pd.DataFrame:
             r = json.loads(line)
             if not r.get("cached"):
                 rows.append({"id": r["id"], "model": r["model"], "variant": r["variant"],
-                             "repeat": r.get("repeat", 0), **normalise(r)})
+                             "repeat": r.get("repeat", 0), "outcome": outcome(r), **normalise(r)})
     return pd.DataFrame(rows)
+
+
+def usage_summary(u: pd.DataFrame, by) -> pd.DataFrame:
+    """Calls (model responses, including refusals), failed attempts (provider errors, retried), tokens and cost."""
+    resp = u.outcome != "api_error"
+    return u.assign(response=resp, failed=~resp).groupby(by).agg(
+        calls=("response", "sum"), failed=("failed", "sum"),
+        served_by=("served_by", lambda s: ",".join(sorted({x for x in s if x}))),
+        input_tokens=("input", "sum"), cached_input=("cached_input", "sum"), output_tokens=("output", "sum"),
+        reasoning_tokens=("reasoning", "sum"), cost_usd=("cost_usd", lambda s: s.sum(min_count=1)),
+        median_latency_s=("latency_s", "median"))
 
 
 def usage_table(df: pd.DataFrame) -> pd.DataFrame:
     """Spend per model and variant; pass load_usage() output to include superseded attempts."""
-    t = df.groupby(["model", "variant", "repeat"]).agg(
-        calls=("id", "size"), served_by=("served_by", lambda s: ",".join(sorted({x for x in s if x}))),
-        input_tokens=("input", "sum"), cached_input=("cached_input", "sum"), output_tokens=("output", "sum"),
-        reasoning_tokens=("reasoning", "sum"), cost_usd=("cost_usd", lambda s: s.sum(min_count=1)),
-        mean_latency_s=("latency_s", "mean"))
+    t = usage_summary(df, ["model", "variant", "repeat"])
     total = t.sum(numeric_only=True)
-    total["mean_latency_s"] = df.latency_s.mean()
+    total["median_latency_s"] = df.latency_s.median()
     t.loc[("TOTAL", "", ""), :] = total
-    return t.round({"cost_usd": 4, "mean_latency_s": 1})
+    return t.round({"cost_usd": 4, "median_latency_s": 1})
 
 
 def _line(ax, d: pd.DataFrame, x: str, title: str, logx: bool = True) -> None:

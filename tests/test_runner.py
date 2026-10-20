@@ -44,7 +44,13 @@ def test_outcome_labels():
 def test_load_env_skips_empty_placeholders(tmp_path, monkeypatch):
     env = tmp_path / ".env"
     env.write_text("# comment\nRELCOMPLETE_TEST_KEY=\nRELCOMPLETE_TEST_KEY=abc123\n")
-    monkeypatch.delenv("RELCOMPLETE_TEST_KEY", raising=False)
+    fake_env = {}
+    monkeypatch.setattr(run.os, "environ", fake_env)  # restored after the test, so nothing leaks
     run.load_env(env)
-    import os
-    assert os.environ["RELCOMPLETE_TEST_KEY"] == "abc123"
+    assert fake_env == {"RELCOMPLETE_TEST_KEY": "abc123"}
+
+
+def test_empty_response_is_final_not_replayed():
+    # a successful call with no content is the model's outcome; retrying would replay the cached response forever
+    assert run.finished({"text": None, "finish_reason": "stop"}, 32768)
+    assert outcome({"text": None, "finish_reason": "stop"}) == "empty"

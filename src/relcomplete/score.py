@@ -153,9 +153,8 @@ def score(q: Question, bench: Benchmark, text: str | None) -> dict:
         err = pred - gold
         return {**base, "exact": abs(err) <= q.meta.get("tolerance", 0.0), "pred": pred, "signed_error": err,
                 "rel_error": abs(err) / abs(gold) if gold else abs(err)}
-    if not ok:
-        return {**base, "exact": False, "recall": 0.0, "precision": 0.0, "f1": 0.0,
-                "missing": len(q.gold), "n_gold": len(q.gold)}
+    if not ok:  # no answer to count errors in: report it as unparseable, not as every item missing
+        return {**base, "exact": False, "recall": 0.0, "precision": 0.0, "f1": 0.0, "n_gold": len(q.gold)}
     if q.answer_type == "groups":
         gold = {(norm(k), norm(v)) for k, v in q.gold.items()}
         universe = resolve_universe(q, bench) + [None]

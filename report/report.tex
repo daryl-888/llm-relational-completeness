@@ -78,15 +78,17 @@ aggregated); context is the median data size in the prompt.}
 \FloatBarrier
 \subsection{Overall completeness}
 Table~\ref{tab:main} shows the \nctx{} in-context set-valued questions. Recall and precision are close to 1 for
-every model, but exact-set accuracy ranges from \exactmax\% to \exactmin\%. The two DeepSeek models are tied; the
-other three are significantly below the best model, by 7 to 17 percentage points.
+every model, but exact-set accuracy ranges from \exactmax\% to \exactmin\%. The best model, \bestmodel, is
+statistically tied with \tiedwithbest; the other \nsigbelow{} are significantly below it, by \deltamin{} to
+\deltamax{} percentage points.
 
 \begin{table}[!htbp]
 \centering\small
 \resizebox{\linewidth}{!}{\input{generated/main.tex}}
 \caption{In-context set-valued questions (E1, $n=\nctx$ per model), with 95\% intervals. $\Delta$: paired
-difference in exact-set accuracy from the best model. \emph{Omit.}/\emph{Comm.}: share of answers that omit a
-correct item / add an incorrect or duplicate one.}
+difference in exact-set accuracy from the best model. Mean recall counts invalid answers as 0; mean precision is
+over valid answers only. \emph{Omit.}/\emph{Comm.}: share of answers that omit a correct item / add an incorrect
+or duplicate one. \emph{Invalid}: truncated, unparseable or refused answers, counted as incorrect.}
 \label{tab:main}
 \end{table}
 
@@ -103,7 +105,7 @@ returned \otherswrong{} wrong items and \othersmadeup{} made-up items across all
 usually miss only a few items (median \medianmissed; \smallmissshare\% miss at most a tenth of the answer), which is
 why recall stays high. MiMo-V2.6 Flash is the exception: it returned \flashmadeup{} made-up items,
 \flashworstmade{} of them on a single \flashworstgold-item question. Box~1 shows one example of each. Across all
-models, \ninvalid{} of the 2{,}500 E1 answers were invalid, including \nrefused{} refused by a safety filter
+models, \ninvalid{} of the \neone{} E1 answers were invalid, including \nrefused{} refused by a safety filter
 (Table~\ref{tab:invalid}).
 
 \begin{figure}[!htbp]
@@ -118,14 +120,14 @@ wrong ones, so incompleteness is not visible in what they list.}
 \FloatBarrier
 \subsection{Completeness, answer size and table size}
 On in-context enumeration (Figure~\ref{fig:size}, Table~\ref{tab:trend}), every model is complete on at least
-93\% of questions with up to 10 correct items. With 50 or more, Claude Haiku 5.5 falls to \largeHaiku\%,
+\smallmin\% of questions with up to 10 correct items. With 50 or more, Claude Haiku 5.5 falls to \largeHaiku\%,
 MiMo-V2.6 Pro to \largeMiMoPro\% and MiMo-V2.6 Flash to \largeMiMoFlash\%. Because large answer sets occur only in
 larger tables, Table~\ref{tab:trend} estimates both effects together, adjusted for input format. Pooled across
 models, each doubling of the answer set multiplies the odds of a complete answer by \orpooledanswer{}
 (95\% CI \orpooledanswerci), and each doubling of the table by \orpooledtable{} (\orpooledtableci): both
 factors matter on their own. Per model, the answer-size effect is significant for Claude Haiku 5.5 and MiMo-V2.6
 Flash, and the table-size effect for Claude Haiku 5.5 and both MiMo models. The DeepSeek models fail too rarely
-(4 and 2 of 100 questions) for either effect to be estimated.
+(\failDSPro{} and \failDSFlash{} of \nenum{} questions) for either effect to be estimated.
 \takeaway{larger answers and larger tables each make a complete answer less likely.}
 
 \begin{figure}[!htbp]
@@ -151,8 +153,9 @@ bootstrap resampling whole questions. n.e.: not estimable (fewer than 5 failures
 Every operation except set operations produced incomplete answers from at least three models
 (Table~\ref{tab:operation}). Enumeration, which has the largest answer sets, is hardest; set operations are
 solved almost perfectly. Input format matters for some models (Table~\ref{tab:format}): MiMo-V2.6 Flash is
-complete on 73\% of questions given as English sentences against 86\% as JSON Lines, and Claude Haiku 5.5 on
-88\% of Markdown or sentence inputs against 96\% for JSON Lines. The DeepSeek models are unaffected.
+complete on \fmtMiMoFlashNl\% of questions given as English sentences against \fmtMiMoFlashJson\% as JSON Lines, and
+Claude Haiku 5.5 on \fmtHaikuMd\% of Markdown and \fmtHaikuNl\% of sentence inputs against \fmtHaikuJson\% for JSON
+Lines. The DeepSeek models are unaffected.
 \takeaway{the effect is not specific to one operation; format effects are smaller and model-specific.}
 
 \begin{table}[!htbp]
@@ -175,7 +178,7 @@ questions, so cells contain different questions.}
 \subsection{Memory-only and retrieval settings}
 From memory, both DeepSeek models were always exact; the other three missed members of short fixed lists
 (Table~\ref{tab:settings}), e.g.\ Claude Haiku 5.5 named Kentucky but not New Jersey as a state ending in ``y''.
-In the retrieval setting every model returned every correct record that was retrieved, so recall (0.869 for all)
+In the retrieval setting every model returned every correct record that was retrieved, so recall (\ragrecall)
 equals the retriever's recall.
 \takeaway{the retrieval slice, as built, measures the retriever rather than the models.}
 
@@ -189,7 +192,7 @@ equals the retriever's recall.
 \FloatBarrier
 \subsection{Scalar aggregation}
 On \nscalar{} COUNT, SUM, MIN, MAX and AVG questions (Table~\ref{tab:scalar}), both DeepSeek models were always
-exact. Of the other models' 11 errors, 9 were undercounts.
+exact. Of the other models' \scalarerrors{} errors, \scalarunder{} were undercounts.
 \takeaway{wrong totals are mostly too low, consistent with dropped items.}
 
 \begin{table}[!htbp]
@@ -201,7 +204,7 @@ exact. Of the other models' 11 errors, 9 were undercounts.
 
 \FloatBarrier
 \subsection{Consistency across runs}
-Two independent samples of the subset agreed on 87--100\% of verdicts (Table~\ref{tab:repeats}). We also re-ran
+Two independent samples of the subset agreed on \agreemin--\agreemax\% of verdicts (Table~\ref{tab:repeats}). We also re-ran
 13 failures, chosen by hand to cover models and operations, three times each (Table~\ref{tab:cases}). Some
 recurred every time: Claude Haiku 5.5 was incomplete on the same memory-only question (U.S.\ states containing
 ``in'') in all three re-runs, omitting Maine every time, and DeepSeek V4 Pro and MiMo-V2.6 Flash were incomplete on the same 50-item list in every re-run, though not always missing the
@@ -267,8 +270,9 @@ all on provider rate or usage limits, and were retried. \reasonshare\% of output
 \begin{table}[!htbp]
 \centering\footnotesize\setlength{\tabcolsep}{3.5pt}
 \input{generated/usage.tex}
-\caption{Usage across all experiments. \emph{Calls}: answered calls; \emph{Failed}: attempts that returned an
-error and were retried. Input and output in millions of tokens;
+\caption{Usage across all experiments. \emph{Calls}: model responses, including refusals; \emph{Failed}:
+attempts that returned a provider error (mostly rate or usage limits) and were retried. $^\dagger$Runs of the same
+model through a second provider. Input and output in millions of tokens;
 \emph{Reasoning}: share of output tokens; cost at provider list prices (Claude Haiku 5.5 and the OpenCode Go
 models were used through subscriptions); latency is the median per call.}
 \label{tab:usage}
@@ -285,7 +289,7 @@ models were used through subscriptions); latency is the median per call.}
 \item Prompt variants do not help; complete models reason far longer on large answer sets.
 \item The DeepSeek models are complete on \exactDSFlash\% of in-context questions, so at this difficulty the
 benchmark leaves little headroom for the strongest models.
-\item Caveats: synthetic data from one seed; one sample per question in E1 (0--13\% of verdicts change on a second
+\item Caveats: synthetic data from one seed; one sample per question in E1 (\flipmin--\flipmax\% of verdicts change on a second
 sample); the answer-size trend rests on 100 enumeration questions per model; the retrieval slice measures the
 retriever; failure cases were chosen by hand; \etwonote{} A stopped Claude Haiku 4.5 run (90 questions) is
 excluded.

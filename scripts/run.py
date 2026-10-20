@@ -38,16 +38,16 @@ def load_env(path: Path = Path(".env")) -> None:
 
 
 def finished(rec: dict, max_tokens: int) -> bool:
-    """A record counts as done unless it errored or was cut off by a lower token limit than the current one."""
+    """A record counts as done unless the call failed or was cut off by a lower token limit than the current one."""
     # Hitting the token limit is an outcome (e.g. a reasoning loop), even with no answer text: retrying at the
     # same limit would only return the cached response. It is redone only if the limit has since been raised.
     if rec.get("finish_reason") in ("length", "max_tokens"):
         return (rec.get("params") or {}).get("max_tokens", 8192) >= max_tokens
     if rec.get("blocked") or is_blocked(rec.get("error"), rec.get("finish_reason")):
         return True  # a refusal is recorded, not retried
-    if rec.get("text") is None:
-        return False
-    return True
+    # No text: retry only if the call failed. A successful response with no content is the model's outcome, and
+    # retrying it would just replay the cached response forever.
+    return rec.get("text") is not None or not rec.get("error")
 
 
 def main() -> int:
