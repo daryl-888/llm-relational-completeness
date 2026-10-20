@@ -336,6 +336,18 @@ def main() -> None:
     write_table(OUT / "by_format.tex", ["Input format", "Qs"] + [m.replace(" ", r"\ ") for m in ORDER], frow,
                 "lr" + "r" * len(ORDER))
 
+    # ---- Complexity of selection criteria: selection questions by number of WHERE conditions
+    sel = ctx[ctx.op == "selection"].assign(k=lambda x: x.subtype.str.split("_").str[0].astype(int))
+    crow = []
+    for k, g in sel.groupby("k"):
+        per_q = g.groupby("id").n_gold.first()
+        crow.append([str(k), str(len(per_q)), f"{per_q.median():g}"] + [pct(g[g.Model == m].exact.mean()) for m in ORDER])
+        macro(f"condsize{WORDS[k]}", f"{per_q.median():g}")
+        for m in ORDER:
+            macro(f"cond{KEY[m]}{WORDS[k]}", pct(g[g.Model == m].exact.mean()))
+    write_table(OUT / "by_conditions.tex", ["Conditions", "Qs", "Median answer size"]
+                + [m.replace(" ", r"\ ") for m in ORDER], crow, "lrr" + "r" * len(ORDER))
+
     # ---- Memory-only and retrieval settings
     srow = []
     for m in ORDER:

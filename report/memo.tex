@@ -34,7 +34,8 @@ details, and the code, data and every raw response are at
 \toprule
 Brief asked for & Status \\
 \midrule
-Related work & Done; summary below, about 20 papers in \texttt{docs/related\_work.md}. \\
+Related work & Done; summary below, and the full review of about 20 papers is attached
+(\texttt{related\_work.pdf}). \\
 Proof of concept & Done. Reproducible failures with known ground truth. For example, DeepSeek V4 Pro was incomplete
 on the same 50-item list in all four runs, and Claude Haiku 5.5 left Maine out of ``U.S.\ states containing `in'\,''
 in all four runs (paper, Box~1 and the failure-case table). \\
@@ -82,7 +83,8 @@ more correct items.
 \textbf{Recommended changes for a full benchmark}
 \begin{enumerate}
 \item \textbf{Harder tiers:} answer sets of 200--1{,}000 items and tables of 5k--20k rows, to restore headroom.
-\item \textbf{A fully crossed design} of answer size $\times$ table size $\times$ format. These are partly
+\item \textbf{A fully crossed design} of answer size $\times$ table size $\times$ format $\times$ number of
+conditions. These are partly
 confounded today (large answers only appear in large tables) and are currently separated by regression.
 \item \textbf{Control reasoning:} a reasoning-off condition and fixed reasoning budgets, to test whether the
 reasoning--completeness link is causal.

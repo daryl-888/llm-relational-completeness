@@ -158,6 +158,25 @@ Claude Haiku 5.5 on \fmtHaikuMd\% of Markdown and \fmtHaikuNl\% of sentence inpu
 Lines. The DeepSeek models are unaffected.
 \takeaway{the effect is not specific to one operation; format effects are smaller and model-specific.}
 
+\FloatBarrier
+\subsection{Complexity of selection criteria}
+Adding WHERE conditions did not make answers less complete (Table~\ref{tab:conditions}). MiMo-V2.6 Flash, the
+model with the most failures, was exact on \condMiMoFlashone\%, \condMiMoFlashtwo\% and \condMiMoFlashthree\% of
+selection questions with one, two and three conditions, and Claude Haiku 5.5 on \condHaikuone\%,
+\condHaikutwo\% and \condHaikuthree\%. By construction, though, questions with more conditions match fewer rows
+(median answer size \condsizeone, \condsizetwo{} and \condsizethree{} items), so condition count is confounded
+with answer size here, and the 60 selection questions are too few to separate the two.
+\takeaway{more conditions alone did not reduce completeness at this scale; a crossed design (conditions $\times$
+answer size) is needed to test it properly.}
+
+\begin{table}[!htbp]
+\centering\small
+\resizebox{\linewidth}{!}{\input{generated/by_conditions.tex}}
+\caption{Exact-set accuracy (\%) on in-context selection questions by number of WHERE conditions (E1).
+\emph{Qs}: questions per model.}
+\label{tab:conditions}
+\end{table}
+
 \begin{table}[!htbp]
 \centering\small
 \resizebox{\linewidth}{!}{\input{generated/by_operation.tex}}

@@ -1,0 +1,154 @@
+\documentclass[10pt]{article}
+\usepackage[margin=0.9in]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage{microtype}
+\usepackage{booktabs,array,tabularx}
+\usepackage{enumitem}
+\usepackage{xcolor}
+\usepackage[colorlinks=true,linkcolor=black,urlcolor=blue!50!black]{hyperref}
+\setlist{itemsep=1pt,topsep=2pt,leftmargin=*}
+\setlength{\parskip}{4pt}
+\setlength{\parindent}{0pt}
+\newcommand{\paper}[3]{\textbf{#1} \textnormal{(#2)}. \href{#3}{\small[link]}}
+\pagestyle{plain}
+
+\begin{document}
+{\Large\textbf{Related work: completeness of relational operations in LLMs}}\par
+\vspace{2pt}
+Daryl Alfaro \quad\textbullet\quad reviewed 2026-10-12 \quad\textbullet\quad companion to the results paper\par
+\vspace{-2pt}\rule{\linewidth}{0.4pt}
+
+Each entry was checked against the paper's abstract or project page (linked). \emph{Not checked} marks details
+that were not confirmed. The question asked of each paper: \textbf{does it measure completeness}, meaning recall
+over the full answer set, and how that changes as the answer set grows, when the evidence is available to the
+model?
+
+\section*{Closest prior work}
+
+\paper{HoloBench}{Maekawa, Iso, Bhutani; ICLR 2025}{https://arxiv.org/abs/2410.11996} \emph{The closest work.}
+\begin{itemize}
+\item \emph{What it does:} turns database queries into long-context text; rows from SQL databases are written out
+as sentences and mixed with irrelevant rows. Five query types: aggregation, max/min, join, comparison/filter,
+ranking.
+\item \emph{What it varies:} context length (4k--64k tokens), information density, how the information is spread,
+and query complexity. \emph{Scoring:} an LLM judge (GPT-4o-mini) gives exact, partial or no-match credit.
+\item \emph{Findings:} the amount of information matters more than context length; aggregation degrades sharply
+while max/min stays easy; GPT-4o is observed failing to return all relevant items as context grows.
+\item \emph{Gap left for us:} it does not vary the number of correct items on its own, does not score at the set
+level (missing vs.\ wrong vs.\ made-up), and relies on a model as judge.
+\end{itemize}
+
+\paper{LOFT}{Lee et al., Google DeepMind; 2024, NAACL Findings 2025}{https://arxiv.org/abs/2406.13121}
+A long-context suite (up to 1M tokens) testing whether long-context models can replace retrieval, RAG and SQL.
+Models rival dedicated retrieval systems but ``still face challenges in areas like compositional reasoning that
+are required in SQL-like tasks.'' Not designed around completeness or answer-set size. \emph{Not checked:} which
+SQL datasets it uses and how multi-row answers are scored.
+
+\paper{Oolong}{Bertsch, Pratapa, Mitamura, Neubig, Gormley; 2025}{https://arxiv.org/abs/2511.02817}
+Long-context aggregation: classify each chunk, then aggregate (counting, label frequency). Frontier models score
+under 50\% at 128K tokens. Covers scalar answers only, not sets.
+
+\paper{LongProc}{2025}{https://arxiv.org/abs/2501.05414}
+Long procedural generation, including HTML$\to$TSV extraction scored by row-level F1 (outputs up to 8K tokens; 17
+models). Row extraction penalises dropped rows, so it is close to ``list every row''. But it copies every item
+rather than selecting items that meet relational conditions, and answer-set size isn't varied on its own.
+
+\paper{Galois: Querying Large Language Models with SQL}{Saeed, De Cao, Papotti; EDBT 2024}{https://arxiv.org/abs/2304.00472}
+Runs SQL with the LLM as the storage layer, answering from memory, and reports ``low precision and recall in the
+returned data''; its query-planning prompts improve completeness. Overlaps only with our memory-only setting.
+
+\section*{Questions with many answers (retrieval and memory)}
+\begin{itemize}
+\item \paper{QAMPARI}{Amouyal et al.; GEM 2023}{https://arxiv.org/abs/2205.12665}
+List answers (at least 5, on average 13) spread over many Wikipedia paragraphs; recall/precision/F1, best F1 32.8.
+Retrieval, reading and knowledge failures are confounded.
+\item \paper{RoMQA}{Zhong et al.; EMNLP Findings 2023}{https://arxiv.org/abs/2210.14353}
+Many-answer questions from Wikidata constraints, with robustness measured across clusters of related questions;
+zero- and few-shot LLMs perform close to naive baselines.
+\item \paper{QUEST}{Malaviya et al.; ACL 2023}{https://arxiv.org/abs/2305.11694}
+3,357 entity-seeking queries with implicit set operations (``shorebirds that are not sandpipers''); retrievers
+struggle with negation and conjunction. Closest to our set-operation slice, but a retrieval benchmark over real
+Wikipedia, not reasoning over data in the prompt.
+\end{itemize}
+
+\section*{Long-context retrieval and reasoning}
+\begin{itemize}
+\item \paper{Lost in the Middle}{Liu et al.; TACL 2024}{https://arxiv.org/abs/2307.03172}
+Accuracy is U-shaped in the position of one relevant document. Our per-position analysis (results paper,
+appendix) tests the same idea for many relevant rows and finds no U-shape.
+\item \paper{RULER}{Hsieh et al.; 2024}{https://arxiv.org/abs/2404.06654}
+Includes multi-value needle-in-a-haystack (retrieve \emph{all} values for a key, 4 in the standard setting) and
+aggregation tasks: retrieving every item, but with very small answer sets.
+\item \paper{BABILong}{Kuratov et al.; NeurIPS 2024 D\&B}{https://arxiv.org/abs/2406.10149}
+bAbI reasoning tasks, including counting and lists/sets, hidden in long text; models use only 10--20\% of their
+context effectively.
+\item \paper{Michelangelo}{Google DeepMind; 2024}{https://deepmind.google/research/publications/michelangelo-long-context-evaluations-beyond-haystacks-via-latent-structure-queries/}
+Latent Structure Queries, including a Latent List task; synthetic and outside training data, like ours.
+\item \paper{Attention Overflow}{Sileo; 2024}{https://arxiv.org/abs/2407.13481}
+Asked which items are missing from a list, models degrade at around 100 items and suggest items already listed.
+\item \paper{The Position Curse}{Zhang et al.; May 2026}{https://arxiv.org/abs/2605.07127}
+Models fail to locate the last few items in short lists; backward retrieval lags forward retrieval.
+\item \paper{List Counting Failures Are Not One Phenomenon}{Ait Hou et al.; Sep 2026}{https://arxiv.org/abs/2609.22230}
+Counting items in context fails in model-specific ways (e.g.\ Llama systematically undercounts), related to our
+COUNT undercounting.
+\end{itemize}
+
+\section*{Tables and SQL}
+\begin{itemize}
+\item \textbf{Table QA} (WikiTableQuestions, TabFact, \href{https://ojs.aaai.org/index.php/AAAI/article/view/34739}{TableBench},
+DataBench): QA over tables in the prompt; most answers are single values or true/false (DataBench includes list
+answers). None vary answer-set size.
+\item \textbf{Text-to-SQL} (Spider, BIRD): the model writes SQL and a database executes it, so completeness comes
+free. Our benchmark deliberately asks the model to \emph{be} the query engine.
+\item \paper{TAG / TAG-Bench}{Biswal et al.; CIDR 2025}{https://arxiv.org/abs/2408.14717}
+Questions over databases needing world knowledge or semantic reasoning; standard methods answer at most 20\%
+correctly.
+\item \paper{LOTUS, semantic operators}{Patel et al.; VLDB 2025}{https://arxiv.org/abs/2407.11418}
+LLM-driven filter, join and aggregate operators with accuracy guarantees: the systems view, which engineers
+completeness instead of measuring the raw model.
+\end{itemize}
+
+\section*{Where this benchmark fits}
+{\small\setlength{\tabcolsep}{4pt}
+\begin{tabularx}{\linewidth}{@{}>{\raggedright\arraybackslash}p{2.6cm}>{\raggedright\arraybackslash}X
+>{\raggedright\arraybackslash}X>{\raggedright\arraybackslash}X>{\raggedright\arraybackslash}X
+>{\raggedright\arraybackslash}p{2.0cm}@{}}
+\toprule
+ & Evidence & Operators & Answer size controlled & Set-level error types & Ground truth \\
+\midrule
+HoloBench & in context & 5 types & no (density, length) & no (LLM judge, partial credit) & SQL \\
+LOFT (SQL) & in context & SQL-like & no & not checked & SQL \\
+Oolong & in context & aggregation & no & no (scalar answers) & synthetic labels \\
+LongProc (HTML$\to$TSV) & in context & extraction & output length & row-level F1 & deterministic \\
+QAMPARI / RoMQA / QUEST & retrieval, memory & set ops (QUEST) & no & recall / precision & Wikipedia, Wikidata \\
+Galois & memory & SQL & no & precision / recall & knowledge base \\
+RULER MV-NIAH & in context & retrieve-all & 4 values & no & synthetic \\
+\midrule
+\textbf{This work} & \textbf{in context, memory, retrieval} & \textbf{7 types} & \textbf{yes, 5--100} (partly
+confounded with table size; adjusted in analysis) & \textbf{missing, near-miss, wrong, made-up, duplicate} &
+\textbf{executed SQL} \\
+\bottomrule
+\end{tabularx}}
+
+\textbf{What is new here.}
+\begin{enumerate}
+\item \textbf{The number of correct items is a controlled variable.} Prior work varies context length or
+information density; HoloBench comes closest but doesn't vary answer-set size on its own. In the current design,
+answer size is partly confounded with table size; the analysis separates the two by regression, and a fully
+crossed design is a recommended next step.
+\item \textbf{Set-level errors against exact ground truth, with no LLM judge.} This is what shows that failures are
+omissions rather than hallucinations, and catches a model inventing items (991 made-up titles from MiMo-V2.6
+Flash on a single question).
+\item \textbf{One framework for seven operation types and three settings,} so in-context completeness can be
+compared directly with memory and retrieval.
+\item \textbf{Reasoning cost.} Models that stay complete reason far longer on larger answer sets (a median of about
+9,000 reasoning tokens on 100-item answers). We found no prior benchmark that reports this cost.
+\end{enumerate}
+
+\textbf{Novelty risk: medium.} HoloBench, Oolong and LongProc together cover nearby ground: database operations
+written out as text, aggregation, and row extraction. The case for this benchmark rests on points 1--4,
+especially the answer-size effect and the error taxonomy. HoloBench should be the main baseline, compared against
+directly.
+
+\end{document}

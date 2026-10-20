@@ -8,7 +8,7 @@ answers, the raw results for five models, and the paper built from them.
 - **Results paper:** [report/report.pdf](report/report.pdf)
 - **Cover memo for the advisor**, covering the brief's deliverables, related work and feasibility:
   [report/memo.pdf](report/memo.pdf)
-- **Related work:** [docs/related_work.md](docs/related_work.md)
+- **Related work:** [report/related_work.pdf](report/related_work.pdf) (source: [docs/related_work.md](docs/related_work.md))
 - **Failure cases:** [docs/failure_cases.md](docs/failure_cases.md)
 
 ## Main result (snapshot, 2026-10-13)

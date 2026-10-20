@@ -64,8 +64,8 @@ how that changes as the answer set grows, when the evidence is available to the 
 
 ## Long-context retrieval and reasoning
 - **Lost in the Middle** (Liu et al., TACL 2024): accuracy follows a U-shape with the position of the relevant
-  document. Our per-position miss analysis (Figure: miss rate by position) tests the same effect for *many*
-  relevant rows rather than one.
+  document. Our per-position miss analysis (results paper, appendix) tests the same effect for *many* relevant
+  rows rather than one, and finds no U-shape.
 - **RULER** (Hsieh et al., 2024): includes *multi-value* needle-in-a-haystack (retrieve **all** values for one key,
   4 in the standard setting) and aggregation tasks (common- and frequent-word extraction). It does test retrieving
   every item, but with very small answer sets.
@@ -103,18 +103,20 @@ how that changes as the answer set grows, when the evidence is available to the 
 | QAMPARI / RoMQA / QUEST | retrieval and memory | set operations (QUEST) | no | recall / precision | Wikipedia / Wikidata |
 | Galois | memory | SQL | no | precision / recall | knowledge base |
 | RULER MV-NIAH | in context | retrieve-all | 4 values | no | synthetic |
-| **This work** | **in context, memory, retrieval** | **7 types** | **yes (5–100, independent of table size)** | **missing / wrong / made-up / duplicate** | **executed SQL** |
+| **This work** | **in context, memory, retrieval** | **7 types** | **yes (5–100; partly confounded with table size, adjusted for in the analysis)** | **missing / near-miss / wrong / made-up / duplicate** | **executed SQL** |
 
 **What is new here:**
-1. **The number of correct items is a controlled variable, separate from table size.** Prior long-context work
-   varies context length or information density. HoloBench comes closest, but it doesn't separate the two.
+1. **The number of correct items is a controlled variable.** Prior long-context work varies context length or
+   information density. HoloBench comes closest, but it doesn't vary answer-set size on its own. In our current
+   design, answer size is partly confounded with table size; the analysis separates the two by regression, and a
+   fully crossed design is a recommended next step.
 2. **Set-level errors are classified against exact ground truth**, with no LLM judge: missing, wrong, made-up,
    duplicate. This is what lets us say failures are *omissions* rather than hallucinations, and spot when a model
-   starts inventing items (e.g. 373 made-up names from MiMo Flash).
+   starts inventing items (e.g. 991 made-up titles from MiMo-V2.6 Flash on a single question).
 3. **One framework covers seven operation types and three settings,** so in-context completeness can be compared
    directly with memory and retrieval completeness.
-4. **Reasoning cost.** Our early results suggest that strong reasoning models achieve completeness by spending
-   10,000+ thinking tokens. We found no prior benchmark that reports this cost.
+4. **Reasoning cost.** The models that stay complete spend far more reasoning on larger answer sets: the median
+   is about 9,000 reasoning tokens on 100-item answers. We found no prior benchmark that reports this cost.
 
 **Novelty risk: medium.** HoloBench, Oolong and LongProc together cover nearby ground: database operations
 written out as text, aggregation, and row extraction. The case for this benchmark rests on points 1–4 above,
