@@ -24,7 +24,7 @@
 prompt, five models had mean recall of \recallmin--\recallmax, yet only \exactmin--\exactmax\% of their answers
 were exactly the correct set. The errors are omissions, not hallucinations, for four of the five models.
 Completeness falls as answer sets and tables grow, and prompting does not fix it. The two DeepSeek models are near
-ceiling at the current difficulty, so a full benchmark needs harder tiers. The attached results paper has the
+ceiling at the current difficulty, so a full benchmark needs harder tiers. The attached results report has the
 details, and the code, data and every raw response are at
 \url{https://github.com/daryl-888/llm-relational-completeness}.
 
@@ -38,7 +38,7 @@ Related work & Done; summary below, and the full review of about 20 papers is at
 (\texttt{related\_work.pdf}). \\
 Proof of concept & Done. Reproducible failures with known ground truth. For example, DeepSeek V4 Pro was incomplete
 on the same 50-item list in all four runs, and Claude Haiku 5.5 left Maine out of ``U.S.\ states containing `in'\,''
-in all four runs (paper, Box~1 and the failure-case table). \\
+in all four runs (results report, Box~1 and the failure-case table). \\
 Preliminary generalization & Done, and broader than asked. Selection, JOIN and aggregation, plus projection, nested
 queries and set operations. Every operation except set operations produces incomplete answers for at least three
 models. Wrong totals on COUNT/SUM questions are mostly undercounts (\scalarunder{} of \scalarerrors). \\
