@@ -132,4 +132,6 @@ code, a fingerprint of the benchmark, the question IDs, the prompt texts, packag
 - `report.tex`, `memo.tex`: the paper and memo source
 - `generated/`: the built tables and figures
 
+**`analysis/`:** follow-up analyses, e.g. `item_level.py` (item-level omissions vs the independent-error baseline).
+
 **`tests/`:** pytest suite.
