@@ -1,4 +1,7 @@
-# Related work
+# Related work (v1)
+
+> Superseded for the expanded scope by [report/related_work_v2.pdf](../report/related_work_v2.pdf), which adds
+> search-agent and set-completeness benchmarks (2025–26) and a novelty assessment.
 
 Reviewed 2026-10-12. Each entry was checked against the paper's abstract or project page (links at the end).
 "Not checked" marks details that were not confirmed.

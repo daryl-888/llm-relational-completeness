@@ -1,0 +1,196 @@
+\documentclass[10pt]{article}
+\usepackage[margin=0.85in]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage{microtype}
+\usepackage{booktabs,array,tabularx}
+\usepackage{enumitem}
+\usepackage{xcolor}
+\usepackage[colorlinks=true,linkcolor=black,urlcolor=blue!50!black]{hyperref}
+\setlist{itemsep=1pt,topsep=2pt,leftmargin=*}
+\setlength{\parskip}{4pt}
+\setlength{\parindent}{0pt}
+\newcommand{\paper}[3]{\textbf{#1} \textnormal{(#2)}. \href{#3}{\small[link]}}
+\pagestyle{plain}
+
+\begin{document}
+{\Large\textbf{Related work, v2: set completeness in LLMs and search agents}}\par
+\vspace{2pt}
+Daryl Alfaro \quad\textbullet\quad \today \quad\textbullet\quad focus: novelty and publication potential of the
+expanded benchmark\par
+\vspace{-2pt}\rule{\linewidth}{0.4pt}
+
+\textbf{Bottom line.} Showing that search agents miss items is \emph{no longer novel}. Since mid-2025, several
+benchmarks ask agents for complete sets and find large gaps:
+\begin{itemize}
+\item \textbf{WideSearch:} best success rate of about 5\%.
+\item \textbf{DeepSearchQA:} the top agent is fully correct on 66\% of prompts despite an F1 of 82.
+\item \textbf{WANDR:} performance drops as the number of target records grows.
+\end{itemize}
+None of them, however, is \emph{diagnostic}. None controls answer-set size or candidate-set size. None asks the
+same questions with full context, with distributed documents, and with search. None measures whether a missed
+item was never found or was found and then dropped. Those are the gaps the expanded benchmark should own. I
+checked each entry below against its abstract and, for the closest ones, the paper body (2026-10-27).
+
+\section*{1. Search agents asked for complete sets (closest to the expanded scope)}
+\begin{itemize}
+\item \paper{WideSearch}{Wong et al., ByteDance Seed; ICLR 2026}{https://arxiv.org/abs/2508.07999}
+200 real-user tasks (English and Chinese) in which agents collect many verifiable facts from the live web into a
+Markdown table, often 100--1,000 cells per task.
+  \begin{itemize}
+  \item \emph{Metrics:} success requires a perfect table; row- and item-level F1 give partial credit.
+  \item \emph{Results:} most systems are near 0\% success and the best reaches 5\%. Recall is consistently below
+  precision. With 128 attempts, item-level F1 nears 80 while table-level success stays under 20.
+  \item \emph{Not reported:} performance by the number of rows required.
+  \end{itemize}
+\item \paper{DeepSearchQA}{Gupta et al., Google DeepMind; 2026}{https://arxiv.org/abs/2601.20975}
+900 hand-written prompts across 17 fields, many with set answers, grounded in the open web.
+  \begin{itemize}
+  \item \emph{Metrics:} each answer is categorised as fully correct, partially correct, ``correct with extraneous
+  answers'' or fully incorrect.
+  \item \emph{Results:} the top agent scores F1 81.9 but is fully correct on only 66.1\% of prompts, which the
+  authors call the ``last mile problem''; this matches our recall vs.\ exact-set gap.
+  \item \emph{Failure modes named:} premature stopping (missing the long tail) and hedging (padding the answer to
+  inflate recall). More test-time compute raises full correctness from 67\% to 86\%.
+  \item \emph{Not reported:} performance by answer-set size.
+  \end{itemize}
+\item \paper{WANDR}{Polshkov et al., Perplexity; Aug 2026}{https://arxiv.org/abs/2608.14747}
+500 tasks requiring many entities (breadth) and evidence for each (depth), from dozens to thousands of records.
+  \begin{itemize}
+  \item \emph{Scoring:} judges re-fetch the cited pages; there is no static gold set.
+  \item \emph{Results:} best soft F1 0.36 and hard F1 0.13. Performance ``drops as target volume and hierarchy
+  depth increase''. Bottlenecks: incomplete discovery, missing enrichment and incomplete evidence.
+  \item \emph{Closest to our answer-size finding,} but not controlled and not separated from task difficulty.
+  \end{itemize}
+\item \paper{DeepWideSearch}{Lan et al.; 2025}{https://arxiv.org/abs/2510.20168}
+220 questions combining multi-hop depth with many items. Agents average 2.39\% success. Failure modes: lack of
+reflection, over-reliance on internal knowledge, insufficient retrieval, context overflow.
+\item \paper{LiveDRBench}{Java et al.; 2025}{https://arxiv.org/abs/2508.04183}
+100 deep-research tasks, including entity enumeration over scientific and public-interest topics. F1 ranges from
+0.02 to 0.72; the best system scores 0.55.
+\item \paper{AutoResearchBench}{Xiong et al.; Apr 2026}{https://arxiv.org/abs/2604.25256}
+Its ``Wide Research'' task asks for the complete set of papers meeting given conditions, with an unknown number of
+answers. The best model reaches 9.3\% IoU. \textbf{This overlaps our planned scientific-publications domain.}
+\end{itemize}
+
+\section*{2. Fixed corpora that separate retrieval from reasoning}
+\begin{itemize}
+\item \paper{Total Recall QA (TRQA)}{Rafiee et al.; 2026}{https://arxiv.org/abs/2603.18516}
+Fixed corpora (5.9M Wikipedia passages; 3.2M documents about synthetic e-commerce products) with answers built
+from a knowledge base. Each query needs \emph{every} relevant entity, but asks for one aggregated value (a count,
+mean, sum and so on), not the set.
+  \begin{itemize}
+  \item \emph{Set sizes:} 9--22 relevant entities on average, at most 50.
+  \item \emph{Results:} even with oracle retrieval GPT-5.2 reaches only 56.8 exact match, and over 90\% of oracle
+  errors are reasoning errors. Agents' number of sub-queries does not grow with the number of gold entities.
+  \item \emph{Not reported:} performance by set size.
+  \item \emph{Relevance:} closest to setting C's ``searchable collection with hidden ground truth'', but its output
+  is a single number, not a set.
+  \end{itemize}
+\item \paper{BrowseComp-Plus}{Chen et al.; ACL 2026}{https://arxiv.org/abs/2508.06600}
+Replaces the live web with a fixed 100,195-document corpus with human-verified evidence and hard negatives, so the
+retriever and the model can be evaluated separately (GPT-5: 55.9\% with BM25, 70.1\% with a strong embedding
+retriever). Answers are short, single facts.
+\end{itemize}
+
+\section*{3. Full-context and structured completeness (our current baseline)}
+\begin{itemize}
+\item \paper{HoloBench}{Maekawa et al.; ICLR 2025}{https://arxiv.org/abs/2410.11996}
+Database rows written out as long text; five query types; varies context length and information density;
+LLM-judge scoring with partial credit. Does not control answer-set size.
+\item \paper{Oolong}{Bertsch et al.; 2025}{https://arxiv.org/abs/2511.02817} Long-context aggregation with scalar
+answers.
+\item \paper{LongProc}{2025}{https://arxiv.org/abs/2501.05414} HTML$\to$TSV row extraction scored by row-level F1,
+with no selection conditions.
+\item \paper{LOFT}{Lee et al.; 2024}{https://arxiv.org/abs/2406.13121} Finds SQL-like compositional reasoning hard
+for long-context models.
+\end{itemize}
+
+\section*{4. Many-answer questions, entity retrieval and recall from memory}
+\begin{itemize}
+\item \textbf{QAMPARI} (\href{https://arxiv.org/abs/2205.12665}{2023}), \textbf{RoMQA}
+(\href{https://arxiv.org/abs/2210.14353}{2023}) and \textbf{QUEST} (\href{https://arxiv.org/abs/2305.11694}{2023}):
+list answers over real corpora, where retrieval, knowledge and reading failures are confounded.
+\item \textbf{NERetrieve} (\href{https://arxiv.org/abs/2310.14282}{2023}): retrieving \emph{all} mentions of an
+entity type; standard retrievers fall well short.
+\item \textbf{Empty Shelves or Lost Keys?} (Calderon et al.; \href{https://proceedings.mlr.press/v306/calderon26a.html}{ICML
+2026}): failures of facts stored in a model's memory are mostly \emph{recall} failures rather than missing
+knowledge. Relevant to our memory-only setting.
+\end{itemize}
+
+\section*{5. The two pilot domains}
+\begin{itemize}
+\item \textbf{Scientific publications: crowded.}
+  \begin{itemize}
+  \item \emph{AutoResearchBench} (above) asks for complete paper sets.
+  \item \paper{PaSa}{ByteDance Seed and Peking University; ACL 2025}{https://arxiv.org/abs/2501.10120}: a
+  crawler-plus-selector agent for ``comprehensive'' paper search, with real-query evaluation.
+  \item \paper{LitSearch}{EMNLP 2024}{https://arxiv.org/abs/2407.18940}: 597 queries, but mostly retrieval of
+  specific papers rather than complete sets.
+  \end{itemize}
+  To be distinct, our tasks should use conditions with \emph{verifiable complete answers} from a fixed snapshot
+  (e.g.\ OpenAlex): explicit (venue and year), relational (co-authorship, citations) and semantic (topic from
+  abstracts).
+\item \textbf{Magic: The Gathering: open.} Existing LLM work on Magic covers gameplay and drafting (e.g.\
+\href{https://arxiv.org/abs/2508.08382}{UrzaGPT}) and rules reasoning. TCG-Bench uses an invented card game. I
+found no completeness benchmark, so this is a clean domain, with a complete, versioned card database to use as
+ground truth.
+\end{itemize}
+
+\section*{Where the expanded benchmark fits}
+{\small\setlength{\tabcolsep}{3pt}
+\begin{tabularx}{\linewidth}{@{}>{\raggedright\arraybackslash}p{2.75cm}>{\raggedright\arraybackslash}p{2.0cm}
+>{\raggedright\arraybackslash}X>{\raggedright\arraybackslash}X>{\raggedright\arraybackslash}X
+>{\raggedright\arraybackslash}X@{}}
+\toprule
+ & Access setting & Output & Size effect measured & Access vs.\ reasoning separated & Set failure decomposition \\
+\midrule
+WideSearch & live web & table of entities & no & no & failure categories \\
+DeepSearchQA & open web & set or single & no & no & premature stop / hedging \\
+WANDR & live web & records + evidence & qualitative & no & bottleneck categories \\
+DeepWideSearch & live web & table & no & no & failure categories \\
+AutoResearchBench & search & paper set & no & no & -- \\
+TRQA & fixed corpus & one number & no & yes (oracle retrieval) & accumulated recall \\
+BrowseComp-Plus & fixed corpus & short answer & -- & yes & -- \\
+HoloBench & full context & mixed & density, length & -- & no (LLM judge) \\
+\midrule
+\textbf{This work} & \textbf{full context, distributed, search; same answer sets} & \textbf{sets} &
+\textbf{controlled: answer size $\times$ candidate size, item-level} & \textbf{yes (identical sets across
+settings)} & \textbf{never found / found but omitted / wrong / stopped early} \\
+\bottomrule
+\end{tabularx}}
+
+\section*{Novelty and publication potential}
+\textbf{What is still open,} and what our preliminary results already support:
+\begin{enumerate}
+\item \textbf{Controlled scaling.} No benchmark reports completeness as a function of answer-set size with
+candidate-set size held fixed, or tests the independent-error baseline. Our analysis
+(\texttt{analysis/item\_level.md}) shows that each item's chance of being missed rises with answer size (odds
+ratio 1.69 per doubling) and with table size (3.71), and that misses clump within answers. The answer-size
+results reported elsewhere (WANDR) are not controlled.
+\item \textbf{Attributing failures to access, reasoning or output.} Asking the same questions, with the same
+answer sets, with full context, with distributed documents and with search would show where items are lost.
+BrowseComp-Plus and TRQA separate retrieval from reasoning only for short or aggregated answers.
+\item \textbf{Set-level failure decomposition, measured.} DeepSearchQA and WideSearch \emph{name} premature
+stopping and incomplete retrieval. None measures how much of the evidence the agent saw ended up in its answer on
+a corpus with hidden ground truth.
+\item \textbf{Graded condition types} (explicit, relational, semantic) with authoritative, versioned ground truth.
+\end{enumerate}
+
+\textbf{Main risk.} Reviewers may say WideSearch and DeepSearchQA already cover this. The paper must frame itself
+as a \emph{diagnostic, controlled} benchmark that explains \emph{why and where} items are lost. It must not frame
+itself as one more hard search benchmark, and it should cite and compare against WideSearch, DeepSearchQA, WANDR
+and HoloBench directly.
+
+\textbf{Cheap novelty check.} WideSearch has released its data and results. Re-analysing them by number of
+required rows would show whether the size effect appears in live-web search too, and would sharpen the
+positioning before we build our own search setting.
+
+\textbf{Venue fit:} NeurIPS Datasets \& Benchmarks or ICLR, given the diagnostic benchmark; SIGIR or CIKM resource
+tracks if the retrieval and search analysis leads.
+
+\textbf{Not yet verified:} details beyond the abstracts for DeepWideSearch, LiveDRBench and AutoResearchBench
+(metric definitions, corpus); the ICLR-version WideSearch numbers; whether Scryfall's terms allow redistributing a
+data snapshot.
+
+\end{document}
