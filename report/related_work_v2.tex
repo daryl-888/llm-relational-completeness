@@ -182,9 +182,10 @@ as a \emph{diagnostic, controlled} benchmark that explains \emph{why and where} 
 itself as one more hard search benchmark, and it should cite and compare against WideSearch, DeepSearchQA, WANDR
 and HoloBench directly.
 
-\textbf{Cheap novelty check.} WideSearch has released its data and results. Re-analysing them by number of
-required rows would show whether the size effect appears in live-web search too, and would sharpen the
-positioning before we build our own search setting.
+\textbf{Reusing WideSearch.} WideSearch has released its 200 tasks and gold tables under CC0 (public domain),
+but not per-task model results: its leaderboard reports only aggregate scores. So its published results can't be
+re-analysed by answer size. Its tasks and gold tables, however, could serve as real-world entity sets of known
+size for our own controlled runs.
 
 \textbf{Venue fit:} NeurIPS Datasets \& Benchmarks or ICLR, given the diagnostic benchmark; SIGIR or CIKM resource
 tracks if the retrieval and search analysis leads.
