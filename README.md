@@ -132,6 +132,9 @@ code, a fingerprint of the benchmark, the question IDs, the prompt texts, packag
 - `report.tex`, `memo.tex`: the paper and memo source
 - `generated/`: the built tables and figures
 
-**`analysis/`:** follow-up analyses, e.g. `item_level.py` (item-level omissions vs the independent-error baseline).
+**`analysis/`:** follow-up analyses:
+- `item_level.py`: item-level omissions vs the independent-error baseline
+- `widesearch.py`: answer sizes and open-set share in WideSearch's CC0 gold tables (downloads a pinned revision
+  to the git-ignored `data/external/`; task-type labels in `widesearch_labels.csv`)
 
 **`tests/`:** pytest suite.
