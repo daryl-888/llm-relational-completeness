@@ -1,0 +1,235 @@
+\documentclass[10pt]{article}
+\usepackage[margin=0.85in]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage{microtype}
+\usepackage{booktabs,array,tabularx}
+\usepackage{enumitem}
+\usepackage{xcolor}
+\usepackage[colorlinks=true,linkcolor=black,urlcolor=blue!50!black]{hyperref}
+\setlist{itemsep=1pt,topsep=2pt,leftmargin=*}
+\setlength{\parskip}{4pt}
+\setlength{\parindent}{0pt}
+\setlength{\emergencystretch}{2em}
+\newcolumntype{L}[1]{>{\raggedright\arraybackslash}p{#1}}
+\newcolumntype{Y}{>{\raggedright\arraybackslash}X}
+\input{generated/numbers.tex}
+\pagestyle{plain}
+
+\begin{document}
+{\Large\textbf{Benchmark proposal, v2: set completeness in LLMs and search agents}}\par
+\vspace{2pt}
+Daryl Alfaro \quad\textbullet\quad \today \quad\textbullet\quad draft for discussion; covers deliverables 1 and 4
+and supersedes \texttt{docs/proposal.md}\par
+\vspace{-2pt}\rule{\linewidth}{0.4pt}
+
+\textbf{Question.} Can an LLM or agent determine and return the \emph{complete} set of relevant entities when the
+information exists but is not already organised as a database?
+
+\textbf{Design in brief.} Every question has one gold set, fixed from a pinned data snapshot before any model is
+run. The same question and gold set are posed in three access settings: (A) the candidates as a table in the
+prompt, (B) the candidates as natural-language documents in the prompt, and (C) a searchable collection the agent
+must explore itself. Questions span three condition types (explicit, relational, semantic) and two real domains
+(Magic: The Gathering and scientific publications); the synthetic benchmark\_v0 stays as the controlled baseline.
+Answer size and candidate size are controlled, so each lost item can be attributed to access, to reasoning, or to
+the size of the set.
+
+\section*{1. Starting point}
+benchmark\_v0 (500 synthetic questions, five models) established:
+\begin{itemize}
+\item \textbf{The gap.} On the \nctx{} questions with every record in the prompt, mean recall is
+\recallmin--\recallmax, yet only \exactmin--\exactmax\% of answers are exactly the correct set.
+\item \textbf{Degradation beyond independent errors.} Each item's odds of being missed rise 1.50$\times$ per
+doubling of answer size [1.24, 1.83] and 3.0$\times$ per doubling of table size [2.25, 4.03] (beta-binomial
+regression, \texttt{analysis/item\_level.md}). Claude Haiku 5.5 misses no item in answers of 10 or fewer, yet
+leaves out at least one item in about half of its 50- and 100-item answers.
+\item \textbf{Limits this proposal addresses:} synthetic records, simple attribute matching, answer size partly
+confounded with table size, answers of at most 100 items, and no search setting.
+\end{itemize}
+
+\section*{2. Task taxonomy}
+{\small
+\begin{tabularx}{\linewidth}{@{}L{2.5cm}YL{4.6cm}@{}}
+\toprule
+Dimension & Levels & Why \\
+\midrule
+Condition type & \textbf{Explicit:} an attribute or text of one entity. \textbf{Relational:} relationships
+between entities (joins, set operations, nesting, conditions defined by aggregates). \textbf{Semantic:}
+interpreting descriptions or evidence. & The three levels in Dr.\ Wen's note; v0's SQL-like operations become the
+relational category. \\
+Set determinacy & The size is implied by the question (``the top 10 for each year'') or the set is open. &
+60\% of WideSearch's real tasks are open-set, including every task above 240 rows
+(\texttt{analysis/widesearch.md}). Manipulated directly: tell the model the count, or not. \\
+Answer size $g$ & 5 to 500 items & The main scaling factor; 10\% of WideSearch's open-set tasks need 200+ rows. \\
+Candidate size $N$ & Pool size in the prompt (A, B); collection size (C) & Separates set size from haystack size. \\
+Output form & Entity set (primary); set of pairs; an aggregate that needs the complete set (a count) & \\
+Domain & Synthetic (control); Magic: The Gathering; scientific publications & \\
+\bottomrule
+\end{tabularx}}
+
+\textbf{Example tasks with real gold-set sizes} (counted on 2026-11-02 through the Scryfall and OpenAlex APIs; these
+are candidates for deliverable 2, not yet verified gold sets):
+
+{\small
+\begin{tabularx}{\linewidth}{@{}L{2.3cm}L{1.6cm}YL{1.1cm}@{}}
+\toprule
+Domain & Type & Question & $|$gold$|$ \\
+\midrule
+MTG & explicit & Every card with the toxic keyword. & 43 \\
+MTG & explicit & Every card whose type line includes Phyrexian. & 484 \\
+MTG & relational & Every card printed in both New Phyrexia (2011) and Phyrexia: All Will Be One (2023). & 7 \\
+MTG & relational & Every card banned in Modern but legal in Legacy. & 39 \\
+MTG & relational & Every legendary creature whose colour identity includes white, blue and black. & 131 \\
+MTG & semantic & Every card in Phyrexia: All Will Be One that can remove an opponent's permanent. & 49$^*$ \\
+MTG & semantic & Every Standard-legal card that destroys or exiles many permanents at once (board wipes). & 109$^*$ \\
+Publications & explicit & Every paper by Percy Liang published 2020--2025. & 196 \\
+Publications & relational & Every paper co-authored by Percy Liang and Christopher D.\ Manning. & 26 \\
+Publications & semantic & Every 2024 paper citing ``Lost in the Middle'' that proposes a new benchmark. & pool to build \\
+\bottomrule
+\end{tabularx}}\par
+{\footnotesize $^*$Scryfall's community function tags (\texttt{otag:removal}, \texttt{otag:board-wipe}): a starting
+pool to adjudicate, not a gold set.}
+
+\textbf{Why semantic gold sets need a written definition.} Dr.\ Wen's example, ``all cards related to Phyrexia'',
+has no single answer: 484 cards have Phyrexian in the type line, 768 mention Phyrexia or Phyrexian anywhere in their name,
+type, rules or flavour text, and 1,286 have art tagged Phyrexian by Scryfall's taggers. Each reading is a valid
+task; the vague prompt is not. Every semantic task therefore states its definition, and the model sees it.
+
+\section*{3. Data sources}
+{\small
+\begin{tabularx}{\linewidth}{@{}L{2.3cm}L{4.1cm}L{4.2cm}Y@{}}
+\toprule
+Source & Content & Licence or terms (checked 2026-11-02) & Use \\
+\midrule
+Scryfall bulk data & 33,357 paper cards; rulings; community function tags and art tags; regenerated daily &
+Free for research under the Wizards of the Coast Fan Content Policy; may not be ``simply'' republished & Pin one
+dated file by hash. Release questions, gold card IDs and a rebuild script, not the data. \\
+MTG Wiki & Lore: planes, characters, storylines & CC BY-NC-SA (per Scryfall's terms) & Real documents for lore
+tasks in B and C \\
+MTGJSON & Card and set data & MIT licence page; its scope over the data files is not explicit & Cross-check \\
+OpenAlex & Works, authors, venues, citations, abstracts & CC0. Free API key (\$1/day of usage); quarterly free
+snapshot ($\sim$745 GB) & Extract bounded pools through the API; pin by date \\
+dblp & Computer-science venues and authors & Not verified (the site blocks automated access) & Cross-check of
+venue lists \\
+WideSearch & 200 real tasks with gold tables & CC0 & Reference for realistic sizes, not ground truth \\
+\bottomrule
+\end{tabularx}}
+
+\section*{4. Ground-truth construction}
+\begin{enumerate}
+\item \textbf{Explicit and relational conditions:} SQL over the pinned snapshot loaded into SQLite, as in v0. Each
+question stores its SQL, and the tests re-execute it against the stored answer.
+\item \textbf{Semantic conditions: a closed pool, labelled exhaustively.}
+  \begin{enumerate}
+  \item A high-recall pre-filter (the union of text, tag and set signals) defines a candidate pool.
+  \item Two LLM judges label every pool item against the written definition. A person adjudicates every
+  disagreement and a random sample of agreements; agreement (Cohen's $\kappa$) is reported per task.
+  \item A random audit of items \emph{outside} the pool bounds what the pre-filter missed: no positives among 600
+  audited items puts the miss rate below 0.5\% with 95\% confidence.
+  \end{enumerate}
+\item \textbf{Identity.} Each entity has a canonical ID (Scryfall oracle ID; OpenAlex work ID or DOI). The scorer
+maps names to IDs through an alias table (both faces of double-faced cards, title variants) and keeps v0's
+near-miss category. Authors in relational tasks are checked by hand: OpenAlex holds a second, one-paper
+``Christopher D.\ Manning'' profile, for example.
+\item \textbf{Memory.} MTG sets released after a model's training cutoff form a post-cutoff split, on which
+recall from memory cannot help.
+\end{enumerate}
+
+\section*{5. Information-access settings}
+{\small
+\begin{tabularx}{\linewidth}{@{}L{2.4cm}YL{3.5cm}L{3.2cm}@{}}
+\toprule
+Setting & The model receives & Isolates & Main measure \\
+\midrule
+P: memory (reference) & The question only & Recall from memory & As v0's memory slice; MTG only \\
+A: full context & A pool of $N$ candidates as a table (CSV) & Identification and exhaustive output & As v0 \\
+B: distributed evidence & The same pool as natural-language documents. Facts a relational condition needs sit on
+different pages (card page, set page, lore page). & Reading and combining unstructured evidence & B$-$A gap on
+identical questions \\
+C: search (controlled) & The full collection (all card, set and lore pages; a publication pool of similar size)
+behind \texttt{search(query)}$\to$10 snippets and \texttt{read(id)}, with a budget of 10, 30 or 100 calls. The agent
+decides when to stop. & Discovery and stopping & Where items are lost (\S6) \\
+C-web (later) & Live web search & Realism & Same questions; gold from the snapshot \\
+\bottomrule
+\end{tabularx}}
+
+All settings share the gold sets. In A and B the pool is the gold set plus distractors up to $N$ (kept under about
+150k tokens); in C it is the whole collection. Pages for B and C are rendered from the snapshot with fixed
+templates, so every fact a question depends on is on some page; real MTG Wiki pages are added for lore tasks.
+This is the ``controlled, searchable collection with hidden ground truth'' that Dr.\ Wen's note suggests starting from.
+
+\section*{6. Metrics}
+\begin{itemize}
+\item \textbf{Primary:} exact-set accuracy, with precision, recall, F1 and v0's error types (missing, near-miss,
+wrong, made-up, duplicate). Truncated, refused and unparseable answers count as incorrect and are reported
+separately.
+\item \textbf{Size curves:} exact-set accuracy and per-item miss rate against $g$ at fixed $N$, with the
+independent-error baseline $(1-q)^g$ and the odds ratio per doubling.
+\item \textbf{Where items are lost (C):} each gold item is never retrieved, retrieved but omitted, or returned;
+wrong inclusions are counted separately. \emph{Evidence coverage} (share of gold items whose evidence the agent
+read) is compared with \emph{final coverage} (recall). A run \emph{stopped early} if the agent ended with budget
+left and recall below 1.
+\item \textbf{Effort:} completeness against the search budget (C) and against reasoning effort (A, B).
+\item \textbf{Self-assessment:} the model also states how many items it believes exist. The gap to $|$gold$|$ shows
+whether it knows its answer is incomplete.
+\item \textbf{Comparisons:} by condition type, setting, domain and representation, paired on identical questions
+(bootstrap over questions).
+\end{itemize}
+
+\section*{7. Answer-size experiment (deliverable 4)}
+\begin{itemize}
+\item \textbf{Design:} fully crossed $g \in \{5, 10, 20, 50, 100, 200, 500\} \times N \in \{1{,}000, 2{,}000,
+4{,}000\}$. All 21 cells are valid (0.1--50\% of rows match), so answer size and table size are no longer
+confounded. Synthetic tables from the v0 generator, in CSV.
+\item \textbf{Output limits:} answers are row IDs, about 3,000 output tokens for 500 items. The output cap is 64k
+tokens, and truncation is reported, never scored as omission. A names variant at $N = 2{,}000$ links back to v0.
+\item \textbf{Seeds and repeats:} $k$ independent tables per cell (seeds; $k$ from the power analysis below), with matching rows at random, recorded
+positions. A second sample on a third of the cells measures run-to-run variation.
+\item \textbf{Analysis:} beta-binomial regression of each answer's missed count on $\log_2 g$, $\log_2 N$ and row
+position, which lets misses clump within an answer. The independent-error null is an odds ratio of 1 for $g$. The
+observed share of complete answers is also compared with $(1-q)^g$, with $q$ estimated at the same $N$ from
+$g \le 10$.
+\item \textbf{Power} (\texttt{analysis/power.md}; 300 simulated experiments per setting, calibrated to v0). The
+observed effect, an odds ratio of about 1.5 per doubling, is detected in every setting even with 3 tables per
+cell. The table gives power for a smaller effect, 1.2 per doubling:\par
+{\small\begin{tabular}{@{}llccc@{}}
+\toprule
+Miss rate at $g = 50$ & Spread across answers & 3 tables per cell & 5 tables (105 answers) & 10 tables \\
+\midrule
+1\% & low ($\sigma = 0.5$) & 65\% & 89\% & 100\% \\
+1\% & high ($\sigma = 1$) & 53\% & 68\% & 94\% \\
+2\% & low & 74\% & 97\% & 100\% \\
+2\% & high & 58\% & 77\% & 97\% \\
+\bottomrule
+\end{tabular}}\par
+\textbf{Recommendation:} 5 tables per cell (105 answers per model), and 10 for a model whose effect looks small. At
+the nominal 5\% level the test wrongly rejects a true null 4--9\% of the time, so the final analysis calibrates its
+critical value by parametric bootstrap.
+\item \textbf{Cost:} a CSV row costs about 22--26 prompt tokens, so $N = 4{,}000$ is about 100k tokens. With
+$k = 5$, one model needs 105 prompts and about 6M input tokens.
+\item \textbf{Real-domain check:} MTG offers a natural ladder of candidate sizes for setting C: one set
+(170--271 cards), Standard (5,164), Pioneer (15,086), all paper cards (33,357).
+\end{itemize}
+
+\section*{8. Pilot and next steps}
+\begin{itemize}
+\item \textbf{Pilot (deliverable 3):} 2 domains $\times$ 3 condition types $\times$ 2 tasks = 12 tasks with
+verified gold sets (deliverable 2), in settings A, B and C (controlled, 30-call budget). Three models: Claude Haiku
+5.5 and MiMo-V2.6 Flash, which make measurable errors in v0, and DeepSeek V4 Pro, the strongest, to test whether
+its ceiling holds outside synthetic tables. Two samples each: 216 runs. Search runs dominate the cost (an
+estimated 100k--300k input tokens each).
+\item \textbf{Order:} gold sets for the 12 pilot tasks $\to$ the A/B/C harness and pilot $\to$ the crossed size
+experiment $\to$ decide which dimensions to scale.
+\item \textbf{Shared work with Shiyu:} one natural split is tasks and ground truth vs.\ the harness and search
+agent, to agree at our first call.
+\end{itemize}
+
+\textbf{Decisions needed.}
+\begin{enumerate}
+\item Is live web search (C-web) in scope for the first paper, or a follow-up?
+\item Who adjudicates semantic labels? The pilot needs a few hundred items checked.
+\item The model list and budget for the pilot.
+\item An OpenAlex API key (free, with an account) for building publication pools.
+\end{enumerate}
+
+\end{document}

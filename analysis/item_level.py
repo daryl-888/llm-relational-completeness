@@ -33,7 +33,7 @@ import pandas as pd  # noqa: E402
 from relcomplete.report import load_results  # noqa: E402
 from relcomplete.schema import Benchmark  # noqa: E402
 from relcomplete.score import norm  # noqa: E402
-from relcomplete.stats import logit, logit_boot  # noqa: E402
+from relcomplete.stats import betabin_logit, logit, logit_boot  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]
 _spec = importlib.util.spec_from_file_location("ma", ROOT / "report" / "make_assets.py")
@@ -109,6 +109,14 @@ def main() -> None:
            "are omitted.", "",
            pd.DataFrame(reg, columns=["Model", "Missed items", "OR: answer size", "OR: table size"]).to_markdown(
                index=False), ""]
+    # Robustness: the pooled model as an answer-level beta-binomial regression, which models the clumping directly
+    Xa = np.column_stack([np.log2(e.n_gold), np.log2(e.n_rows)] + [(e.fmt == f).astype(float) for f in
+                         ["csv", "json", "nl"]] + [(e.Model == m).astype(float) for m in models[1:]])
+    w, rho, se = betabin_logit(Xa, (e.missing + e.near_miss).values, e.n_gold.values)
+    ci = lambda j: f"{np.exp(w[j]):.2f} [{np.exp(w[j] - 1.96 * se[j]):.2f}, {np.exp(w[j] + 1.96 * se[j]):.2f}]"  # noqa: E731
+    md += [f"Check with an answer-level beta-binomial regression (all models, model fixed effects), which lets "
+           f"misses clump within an answer: OR answer size {ci(1)}, OR table size {ci(2)}; estimated intra-answer "
+           f"correlation {rho:.3f}.", ""]
 
     # 2. observed vs (1 - q_small)^n, and 3. dispersion
     obs = []

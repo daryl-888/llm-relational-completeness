@@ -9,6 +9,7 @@ answers, the raw results for five models, and the paper built from them.
 - **Cover memo for the advisor**, covering the brief's deliverables, related work and feasibility:
   [report/memo.pdf](report/memo.pdf)
 - **Related work:** [report/related_work_v2.pdf](report/related_work_v2.pdf) for the expanded scope; v1: [report/related_work.pdf](report/related_work.pdf)
+- **Benchmark proposal v2** (set completeness in LLMs and search agents): [report/proposal_v2.pdf](report/proposal_v2.pdf)
 - **Failure cases:** [docs/failure_cases.md](docs/failure_cases.md)
 
 ## Main result (snapshot, 2026-10-13)
@@ -136,5 +137,6 @@ code, a fingerprint of the benchmark, the question IDs, the prompt texts, packag
 - `item_level.py`: item-level omissions vs the independent-error baseline
 - `widesearch.py`: answer sizes and open-set share in WideSearch's CC0 gold tables (downloads a pinned revision
   to the git-ignored `data/external/`; task-type labels in `widesearch_labels.csv`)
+- `power.py`: simulated power of the fully crossed answer-size experiment
 
 **`tests/`:** pytest suite.

@@ -20,7 +20,7 @@ def load_results(results_dir: Path, bench: Benchmark) -> pd.DataFrame:
     recs = []
     for path in sorted(results_dir.glob("*__*.jsonl")):
         latest = {}
-        for line in path.open():
+        for line in path.read_text().splitlines():
             r = json.loads(line)
             latest[r["id"]] = r  # a re-run of the same question replaces the earlier line
         for r in latest.values():
@@ -133,7 +133,7 @@ def load_usage(results_dir: Path) -> pd.DataFrame:
     """One row per API call, including attempts later superseded by a re-run: everything that was spent."""
     rows = []
     for path in sorted(results_dir.glob("*__*.jsonl")):
-        for line in path.open():
+        for line in path.read_text().splitlines():
             r = json.loads(line)
             if not r.get("cached"):
                 rows.append({"id": r["id"], "model": r["model"], "variant": r["variant"],

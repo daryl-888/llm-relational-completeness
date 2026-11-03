@@ -1,7 +1,7 @@
 """The statistics behind the report's intervals and trends."""
 import numpy as np
 
-from relcomplete.stats import boot_mean, logit, logit_boot, wilson
+from relcomplete.stats import betabin_logit, boot_mean, logit, logit_boot, wilson
 
 
 def test_wilson_known_values():
@@ -38,3 +38,23 @@ def test_cluster_bootstrap_resamples_whole_clusters():
     y = (np.repeat(np.arange(10), 3) < 5).astype(float)
     bs = logit_boot(x, y, rng, clusters=np.repeat(np.arange(10), 3), b=50)
     assert bs.shape == (50, 2) and np.isfinite(bs).all()
+
+
+def test_betabin_logit_recovers_slope_and_clumping():
+    rng = np.random.default_rng(3)
+    n = np.repeat([10, 50, 200], 400).astype(float)
+    x = np.log2(n)
+    mu = 1 / (1 + np.exp(-(-5.0 + 0.4 * x)))
+    rho = 0.05
+    p = rng.beta(mu * (1 / rho - 1), (1 - mu) * (1 / rho - 1))  # shared miss rate per answer
+    k = rng.binomial(n.astype(int), p)
+    w, rho_hat, se = betabin_logit(x[:, None], k, n)
+    assert abs(w[1] - 0.4) < 3 * se[1] and abs(rho_hat - rho) < 0.02
+
+
+def test_betabin_logit_without_clumping():
+    rng = np.random.default_rng(4)
+    n = np.repeat([5, 50, 500], 50).astype(float)
+    k = rng.binomial(n.astype(int), 0.02)
+    w, rho_hat, se = betabin_logit(np.log2(n)[:, None], k, n)
+    assert rho_hat < 0.01 and np.isfinite(se).all()

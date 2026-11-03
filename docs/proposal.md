@@ -1,5 +1,8 @@
 # Benchmark proposal: completeness-sensitive relational operations
 
+> **Superseded (2026-11-02)** by [the v2 proposal](../report/proposal_v2.pdf), which broadens the scope to set
+> completeness in LLMs and search agents.
+>
 > **Status (2026-10-13):** this is the original proposal from 2026-10-11, kept for reference. What was actually
 > run differs in a few ways:
 > - **Models:** DeepSeek V4 Pro and Flash (OpenCode Go), Claude Haiku 5.5 (Claude Code CLI), and MiMo-V2.6 Pro

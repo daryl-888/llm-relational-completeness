@@ -23,6 +23,8 @@ Odds ratio that a given correct item is missed, per doubling, adjusted for the o
 | MiMo-V2.6 Flash                  |            229 | 2.24 [1.58, 3.47] | 4.26 [2.81, 10.26] |
 | All models (model fixed effects) |            306 | 1.69 [1.30, 2.10] | 3.71 [2.76, 5.83]  |
 
+Check with an answer-level beta-binomial regression (all models, model fixed effects), which lets misses clump within an answer: OR answer size 1.50 [1.24, 1.83], OR table size 3.01 [2.25, 4.03]; estimated intra-answer correlation 0.047.
+
 ## 2. Answers with no omission (%): observed (baseline)
 
 Baseline = (1 - q)^n, with q each model's per-item miss rate on answer sets of 10 or fewer items.

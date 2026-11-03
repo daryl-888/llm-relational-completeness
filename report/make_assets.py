@@ -34,7 +34,8 @@ from relcomplete.synth import ENTITY  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / "report" / "generated"
-DOCS = [ROOT / "report" / "report.tex", ROOT / "report" / "memo.tex"]  # numbers.tex keeps only macros these use
+# numbers.tex keeps only the macros these documents use
+DOCS = [ROOT / "report" / n for n in ("report.tex", "memo.tex", "proposal_v2.tex")]
 
 # Models in the paper and the result files that represent them. MiMo was run to completion on OpenRouter; its
 # partial OpenCode Go runs and the stopped Haiku 4.5 run (90 questions) are excluded. ALSO maps a model's runs
